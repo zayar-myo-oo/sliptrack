@@ -107,3 +107,5 @@ Production readiness requires native device validation, release signing, store p
 Android background OCR/import is not implemented as a headless Flutter worker: the worker provides a deferred discovery hint and foreground catch-up performs extraction. iOS performs observation/import while running and catch-up when reopened. See the platform document for precise boundaries.
 
 
+#   s l i p t r a c k  
+ 
