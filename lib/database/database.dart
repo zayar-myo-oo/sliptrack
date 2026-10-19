@@ -5,6 +5,7 @@ import 'package:drift/native.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import '../core/models.dart';
+import '../core/data_groups.dart';
 import '../core/vault.dart';
 import '../core/backup.dart';
 import '../features/companion/coach_models.dart';
@@ -40,7 +41,11 @@ class SlipDatabase extends GeneratedDatabase {
     onUpgrade: (_, from, to) async {
       if (from < 2) await createLookups();
       if (from < 3) await createQueueIndex();
-      if (from < 4) await customStatement('CREATE TABLE savings (id TEXT PRIMARY KEY, payload TEXT NOT NULL)');
+      if (from < 4) {
+        await customStatement(
+          'CREATE TABLE savings (id TEXT PRIMARY KEY, payload TEXT NOT NULL)',
+        );
+      }
     },
     beforeOpen: (_) async {
       await customStatement('PRAGMA secure_delete = ON');
@@ -92,6 +97,39 @@ class Repository {
         ),
       ),
     );
+  }
+
+  Future<Map<String, dynamic>?> record(String table, String id) async {
+    _checkTable(table);
+    final row = await db
+        .customSelect(
+          'SELECT payload FROM $table WHERE id=?',
+          variables: [Variable(id)],
+        )
+        .getSingleOrNull();
+    return row == null
+        ? null
+        : vault.unseal(row.read<String>('payload'), '$table:$id');
+  }
+
+  Future<String?> existingSlipId({
+    required String source,
+    String hash = '',
+  }) async {
+    for (final entry in {'source': source, 'hash': hash}.entries) {
+      if (entry.value.isEmpty) continue;
+      final row = await db
+          .customSelect(
+            'SELECT record_id FROM lookups WHERE kind=? AND digest=? LIMIT 1',
+            variables: [
+              Variable(entry.key),
+              Variable(await vault.fingerprint(entry.value)),
+            ],
+          )
+          .getSingleOrNull();
+      if (row != null) return row.read<String>('record_id');
+    }
+    return null;
   }
 
   Future<void> put(String table, String id, Map<String, dynamic> value) async {
@@ -163,15 +201,52 @@ class Repository {
       );
   Future<List<Account>> accounts() async =>
       (await records('accounts')).map(Account.fromJson).toList();
-  Future<List<SavingsEntry>> savings() async => (await records('savings')).map(SavingsEntry.fromJson).toList()
-    ..sort((a, b) => b.date.compareTo(a.date));
+  Future<List<SavingsEntry>> savings() async =>
+      (await records('savings')).map(SavingsEntry.fromJson).toList()
+        ..sort((a, b) => b.date.compareTo(a.date));
   Future<void> saveSavings(SavingsEntry entry) async {
-    if (entry.amountMinor <= 0 || entry.goalThbMinor <= 0 || !['THB', 'MMK'].contains(entry.currency)) throw ArgumentError('Invalid savings');
-    await put('savings', entry.id, entry.toJson()); changes.add(null);
+    if (entry.amountMinor <= 0 ||
+        entry.goalThbMinor <= 0 ||
+        entry.rateMicros <= 0 ||
+        entry.xpMicros < 0 ||
+        !['THB', 'MMK'].contains(entry.currency)) {
+      throw ArgumentError('Invalid savings');
+    }
+    await db.transaction(() async {
+      await _updatePetProgress();
+      await put('savings', entry.id, entry.toJson());
+      await _updatePetProgress();
+    });
+    changes.add(null);
   }
+
   Future<void> deleteSavings(String id) async {
-    await db.customStatement('DELETE FROM savings WHERE id=?', [id]); changes.add(null);
+    await db.transaction(() async {
+      // Capture earned rewards before removing their source, even if the UI
+      // controller has not observed the most recent savings change yet.
+      await _updatePetProgress();
+      await db.customStatement('DELETE FROM savings WHERE id=?', [id]);
+    });
+    changes.add(null);
   }
+
+  Future<PetProgress> petProgress() => db.transaction(_updatePetProgress);
+  Future<PetProgress> _updatePetProgress() async {
+    final current = await settings();
+    final progress = PetProgress(
+      xpMicros: (await savings()).fold<int>(
+        0,
+        (sum, entry) => sum + entry.xpMicros,
+      ),
+      highestMilestones: (current['petHighestMilestones'] as int?) ?? 0,
+    );
+    if (progress.earnedMilestones != current['petHighestMilestones']) {
+      current['petHighestMilestones'] = progress.earnedMilestones;
+      await setSettings(current);
+    }
+    return progress;
+  }
+
   Future<Map<String, dynamic>> settings() async =>
       (await records('settings')).firstOrNull ?? {};
   Future<void> setSettings(Map<String, dynamic> settings) =>
@@ -238,31 +313,34 @@ class Repository {
     );
   }
 
-  Future<ImportResult> importSlip(Slip s) => db.transaction(() async {
-    final k = keys(s);
-    for (final kind in ['source', 'hash']) {
-      if (await _has(kind, k[kind]!)) return ImportResult.duplicate;
-    }
-    final references = await matchingReferences(s);
-    if (references.any(
-      (other) =>
-          s.amountMinor != null &&
-          s.date != null &&
-          other.amountMinor == s.amountMinor &&
-          other.currency == s.currency &&
-          other.date == s.date,
-    )) {
-      return ImportResult.duplicate;
-    }
-    s.possibleDuplicate =
-        references.isNotEmpty || await _has('composite', k['composite']!);
-    s.review = ReviewStatus.pending;
-    await _writeSlip(s);
-    changes.add(null);
-    return s.possibleDuplicate
-        ? ImportResult.possibleDuplicate
-        : ImportResult.inserted;
-  });
+  Future<ImportResult> importSlip(Slip s, {bool confirm = false}) =>
+      db.transaction(() async {
+        final k = keys(s);
+        for (final kind in ['source', 'hash']) {
+          if (await _has(kind, k[kind]!)) return ImportResult.duplicate;
+        }
+        final references = await matchingReferences(s);
+        if (references.any(
+          (other) =>
+              s.amountMinor != null &&
+              s.date != null &&
+              other.amountMinor == s.amountMinor &&
+              other.currency == s.currency &&
+              other.date == s.date,
+        )) {
+          return ImportResult.duplicate;
+        }
+        s.possibleDuplicate =
+            references.isNotEmpty || await _has('composite', k['composite']!);
+        s.review = confirm && s.valid && !s.possibleDuplicate
+            ? ReviewStatus.confirmed
+            : ReviewStatus.pending;
+        await _writeSlip(s);
+        changes.add(null);
+        return s.possibleDuplicate
+            ? ImportResult.possibleDuplicate
+            : ImportResult.inserted;
+      });
   Future<void> _writeSlip(Slip s) async {
     s.updatedAt = DateTime.now().toUtc();
     await put('transactions', s.id, s.toJson());
@@ -276,6 +354,10 @@ class Repository {
   }
 
   Future<void> saveSlip(Slip s) async {
+    if (s.savingsReserveMinor < 0 ||
+        s.savingsReserveMinor > (s.amountMinor ?? 0)) {
+      throw ArgumentError('Savings reserve must be between zero and income');
+    }
     if (s.review == ReviewStatus.confirmed && !s.valid) {
       throw StateError('Review required');
     }
@@ -308,19 +390,90 @@ class Repository {
     changes.add(null);
   }
 
+  Future<Map<DataGroup, int>> dataCounts({
+    DateTime? start,
+    DateTime? end,
+  }) async {
+    bool includes(DateTime? date) =>
+        start == null ||
+        (date != null && !date.isBefore(start) && date.isBefore(end!));
+    final items = (await slips()).where((s) => includes(s.date)).toList();
+    return {
+      for (final group in DataGroup.values)
+        group: group == DataGroup.savings
+            ? (await savings()).where((s) => includes(s.date)).length
+            : items.where(group.matches).length,
+    };
+  }
+
+  Future<int> deleteData(
+    Set<DataGroup> groups, {
+    DateTime? start,
+    DateTime? end,
+  }) async {
+    if ((start == null) != (end == null) ||
+        (start != null && !end!.isAfter(start))) {
+      throw ArgumentError('Invalid deletion period');
+    }
+    bool includes(DateTime? date) =>
+        start == null ||
+        (date != null && !date.isBefore(start) && date.isBefore(end!));
+    final count = await db.transaction(() async {
+      final remove = (await slips())
+          .where((s) => includes(s.date) && groups.any((g) => g.matches(s)))
+          .toList();
+      final ids = remove.map((s) => s.id).toSet();
+      final sources = remove
+          .map((s) => s.source)
+          .where((s) => s.isNotEmpty)
+          .toSet();
+      for (final id in ids) {
+        await db.customStatement('DELETE FROM transactions WHERE id=?', [id]);
+        await db.customStatement('DELETE FROM lookups WHERE record_id=?', [id]);
+      }
+      // Explicitly picking a deleted receipt should be able to import it again.
+      if (ids.isNotEmpty) {
+        for (final item in await records('queue')) {
+          if (ids.contains(item['recordId']) ||
+              sources.contains(item['source'])) {
+            await db.customStatement('DELETE FROM queue WHERE id=?', [
+              item['id'],
+            ]);
+          }
+        }
+      }
+      var removed = ids.length;
+      if (groups.contains(DataGroup.savings)) {
+        await _updatePetProgress();
+        for (final entry in (await savings()).where((s) => includes(s.date))) {
+          await db.customStatement('DELETE FROM savings WHERE id=?', [
+            entry.id,
+          ]);
+          removed++;
+        }
+      }
+      return removed;
+    });
+    changes.add(null);
+    return count;
+  }
+
   Future<String> exportEncrypted(String password) async {
     if (password.length < 12) throw ArgumentError('Use at least 12 characters');
     // Password-derived portable backup key, independent of the device Keychain.
-    return BackupCodec.encode({
-      for (final t in SlipDatabase.entities) t: await records(t),
-    }, password);
+    final snapshot = await db.transaction(
+      () async => {for (final t in SlipDatabase.entities) t: await records(t)},
+    );
+    return BackupCodec.encode(snapshot, password);
   }
 
   Future<void> importEncrypted(String data, String password) async {
     final backup = await BackupCodec.decode(data, password);
     // Restore only into an empty database; preserving IDs avoids orphaned accounts.
     await db.transaction(() async {
-      if ((await slips()).isNotEmpty || (await accounts()).isNotEmpty) {
+      if ((await slips()).isNotEmpty ||
+          (await accounts()).isNotEmpty ||
+          (await savings()).isNotEmpty) {
         throw StateError('Restore requires an empty database');
       }
       for (final a in backup['accounts'] as List) {
@@ -330,7 +483,12 @@ class Repository {
       for (final t in backup['transactions'] as List) {
         await _writeSlip(Slip.fromJson(Map<String, dynamic>.from(t)));
       }
-      for (final table in ['categories', 'settings', 'scan_history', 'savings']) {
+      for (final table in [
+        'categories',
+        'settings',
+        'scan_history',
+        'savings',
+      ]) {
         for (final item in (backup[table] as List? ?? [])) {
           final record = Map<String, dynamic>.from(item);
           if (table == 'settings') {

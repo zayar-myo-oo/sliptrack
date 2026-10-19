@@ -1,5 +1,42 @@
 # Validation record
 
+## 19 October 2026 — macOS continuation
+
+Latest UI/data continuation: `flutter analyze` passes and **53 tests pass**. The final signed iOS release build passed and the private update was installed on the connected iPhone without deleting app data. The palette is now neutral graphite/white with muted blue accents; summary text, cards and buttons are smaller. The companion is a code-drawn animated cat with pointed ears, whiskers and a swaying tail, preserving the existing moods/reward state.
+
+Navigation uses one persistent shell and opaque Material content clipped to its bounds. All in-app routes use `NoTransitionPage`; tab changes no longer slide transparent scroll views across each other or animate duplicate navigation bars. The iOS widget variant switches Analytics → Settings with 16 ms pumps and verifies only the new page and one shell are visible.
+
+Manual expense creation is available from Overview and encrypted records retain an explicit `isManualExpense` flag. Older JSON defaults this flag to false. No database rebuild or destructive schema migration is required. Tests cover the Sep 25 income continuing through Oct 24, confirmed manual expenses in that cycle, and exclusion of Oct 25 records.
+
+Settings → Manage data previews counts by type and can delete imported receipts, manual income, manual expenses or savings independently, for one selected pay cycle or all dates. Confirmation is required in the app; no user financial data was cleared during development. Tests cover cancel/confirm in the real UI, preservation of unselected records/settings, queue/duplicate-index cleanup for re-import, and retained cat rewards after savings deletion.
+
+
+Host: macOS with Xcode 27.0, Flutter 3.47.7 / Dart 3.13.5.
+
+- `flutter analyze`: passed with no issues.
+- `flutter test`: 49 tests passed, including the new pay-cycle, income-gate, notification-controller, savings and mobile import flows.
+- `flutter build ios --release --no-codesign`: passed; compiles the Swift notification bridge and Share extension. `flutter build ios --release` also passed with the existing development team, and the resulting private update was installed on the connected iPhone under the same bundle identifier.
+- `flutter build apk --debug`: passed; compiles the Kotlin permission/notification channel/posting handlers.
+- Generated and visually inspected synthetic 390×844 UI captures in ignored `build/ui-review/` (Overview, Scan, Review). These are test-renderer previews, not screenshots of the user's financial records.
+
+New regression coverage:
+
+- 25th inclusive / next 25th exclusive boundaries, year rollover and leap February; extra income stays in the existing cycle.
+- No photo picker, gallery discovery or queued/shared OCR until confirmed manual income exists in the active cycle; the next 25th requires new income.
+- Confirmed-only 80% / 100% alerts, both thresholds when crossed together, month/cycle rollover, denial/failure retries, overlapping evaluations and deduplication after controller restart.
+- Original MMK amounts remain intact while the offline rate supplies approximate THB budget comparisons.
+- Savings snapshots, encrypted persistence/portable backup, level-10 cap, later outfits and reward retention after immediate savings deletion.
+- Income entry → system-picker service → OCR/parser → extracted review form → save pending → visible queue → re-pick existing receipt → confirmation → persisted period totals. Media/OCR services are fake; this does not claim real native OCR accuracy.
+- Centered companion remains visible in editors and Analytics; tapping it returns to Overview.
+- Reduced-motion navigation tests; continuous companion animation no longer causes tests to wait indefinitely.
+- Legacy v1 migration fixture now models the actual old schema and verifies upgrade to v4.
+
+The latest user requirement supersedes calendar-only budgeting: the default budget cycle is now the 25th to the following 24th. Calendar month remains a separate, strictly isolated view. Savings remain explicit entries rather than inferred net income.
+
+Still requires physical-device validation: actual KBZ/TrueMoney images, native notification permission/foreground banner/tap behavior, share extension import and native backup pickers. KBank remains provisional. No real receipts, signing secrets or financial databases were added to source control.
+
+## Earlier Windows baseline
+
 Date: 18 October 2026. Host: Windows. SDK: Flutter 3.47.7 / Dart 3.13.5.
 
 ## Executed checks
@@ -58,3 +95,8 @@ The mobile widget flow found and fixed a real narrow-screen dropdown overflow.
 The CI workflow is provided as a reproducible check definition, not evidence that its Android/iOS jobs have already succeeded.
 
 
+
+## Salary-date and automatic import update
+- Local Apple Vision extraction on all three user-supplied images produced the expected dates/times and amounts. The two TrueMoney representations share a reference and represent one transaction. Images and raw OCR outputs remain outside the repository.
+- Added checks for open salary periods past the 25th, next-salary boundaries, extra income, encrypted savings reserves, unchanged actual savings, OCR column ordering and split timestamps.
+- iPhone-sized integration coverage now verifies savings reservation and immediate import totals without per-receipt confirmation. Album discovery is implemented natively for PhotoKit collections and Android MediaStore buckets; live user-library album selection still requires device interaction.

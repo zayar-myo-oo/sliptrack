@@ -14,6 +14,20 @@ import 'pipeline_test.dart' show FakeGallery, FakeOcr, synthetic;
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  setUp(() {
+    // The companion intentionally animates continuously. Exercise its
+    // reduced-motion mode so navigation can settle in these flow tests.
+    TestWidgetsFlutterBinding
+        .instance
+        .platformDispatcher
+        .accessibilityFeaturesTestValue = const FakeAccessibilityFeatures(
+      disableAnimations: true,
+    );
+  });
+  tearDown(() {
+    TestWidgetsFlutterBinding.instance.platformDispatcher
+        .clearAccessibilityFeaturesTestValue();
+  });
   testWidgets(
     'mobile dashboard, transaction review and confirm update actual totals',
     (tester) async {
@@ -32,7 +46,12 @@ void main() {
         SlipDatabase(NativeDatabase.memory()),
         Vault(List.generate(32, (i) => i)),
       );
-      final scanner = ScanController(repo, FakeGallery(), FakeOcr());
+      final scanner = ScanController(
+        repo,
+        FakeGallery(),
+        FakeOcr(),
+        requireIncome: false,
+      );
       addTearDown(repo.close);
       final prefs = Preferences(repo, {'onboarded': true});
       final slip = synthetic()
@@ -72,11 +91,20 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Review receipt'), findsOneWidget);
       expect(tester.takeException(), isNull);
-      await tester.ensureVisible(find.text('Direction'));
+      await tester.scrollUntilVisible(
+        find.text('Direction'),
+        300,
+        scrollable: find
+            .descendant(
+              of: find.byType(ListView),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('unknown').first);
+      await tester.tap(find.text('Choose direction').first);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('expense').last);
+      await tester.tap(find.text('Money out').last);
       await tester.pumpAndSettle();
       await tester.scrollUntilVisible(
         find.text('Confirm transaction'),
@@ -115,7 +143,12 @@ void main() {
         Vault(List.generate(32, (i) => i)),
       );
       addTearDown(repo.close);
-      final scanner = ScanController(repo, FakeGallery(), FakeOcr());
+      final scanner = ScanController(
+        repo,
+        FakeGallery(),
+        FakeOcr(),
+        requireIncome: false,
+      );
       final prefs = Preferences(repo, {'onboarded': true});
       final now = DateTime.now();
       final current = synthetic(source: 'current', reference: 'CURRENT123')
@@ -147,6 +180,8 @@ void main() {
       expect(find.text('-200.00 MMK'), findsNothing);
       expect(find.text('Current-month receipt'), findsOneWidget);
       expect(find.text('Previous-month receipt'), findsNothing);
+      await tester.tap(find.text('Calendar month'));
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('monthPrevious')));
       await tester.pumpAndSettle();
       expect(find.text('-200.00 MMK'), findsOneWidget);

@@ -2,14 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>SlipTrackAppGroup</key><string>group.app.sliptrack.sliptrack</string>
-    <key>SlipTrackKeychainGroup</key><string>$(AppIdentifierPrefix)app.sliptrack.shared</string>
-    <key>NSPhotoLibraryUsageDescription</key>
-    <string>Find bank receipt images you authorize and extract transactions privately on this device.</string>
-    <key>NSFaceIDUsageDescription</key>
-    <string>Unlock your private SlipTrack financial records.</string>
-    <key>PHPhotoLibraryPreventAutomaticLimitedAccessAlert</key>
-    <true/>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
@@ -34,6 +26,16 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Unlock your private SlipTrack financial records.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Find bank receipt images you authorize and extract transactions privately on this device.</string>
+	<key>PHPhotoLibraryPreventAutomaticLimitedAccessAlert</key>
+	<true/>
+	<key>SlipTrackAppGroup</key>
+	<string>group.app.sliptrack.sliptrack</string>
+	<key>SlipTrackKeychainGroup</key>
+	<string>$(AppIdentifierPrefix)app.sliptrack.shared</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

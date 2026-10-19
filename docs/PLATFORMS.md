@@ -45,3 +45,11 @@ No alternative Thai/Myanmar model has been bundled or validated. The functional 
 - [WorkManager releases](https://developer.android.com/jetpack/androidx/releases/work)
 - [Vision recognition API](https://developer.apple.com/documentation/vision/vnrecognizetextrequest)
 - [Flutter iOS app extensions](https://docs.flutter.dev/platform-integration/ios/app-extensions)
+
+## Local spending alerts and pay-cycle gate
+
+Both native media channels support `notificationPermission` (queries without prompting unless `request: true`) and `notifyBudget` (returns whether the OS accepted a local notification request). iOS requests alert/sound authorization and presents SlipTrack budget banners in the foreground. Android declares POST_NOTIFICATIONS, requests runtime permission on API 33+, uses a dedicated notification channel, respects blocked channel/app settings, and opens SlipTrack when tapped. No notification-listener service or remote push entitlement is used.
+
+Dart persists thresholds per 25th-to-25th cycle and uses a separate stable notification ID for each threshold. Permission denial or a rejected request does not mark a threshold as sent. OS acceptance does not guarantee a visible banner: Focus, user settings and OS policies still apply. Threshold checks are foreground/resume and record-change driven; there is no background headless financial worker.
+
+OCR processing, including queued shares, requires confirmed manually entered income in the current cycle. Sources can remain queued until income is recorded. This gate does not delete any existing receipts or photos.

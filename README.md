@@ -6,7 +6,15 @@ This is an implemented development app, with real native photo/OCR bridges and e
 
 ## Current development snapshot
 
-The latest manual-income, savings, companion and approximate currency conversion changes are still being integrated and have not passed a fresh full validation run. The companion UI and budget threshold logic are present; native budget-notification channel handlers still need implementation. Existing APKs and earlier test results do not validate these latest changes. iOS has not been compiled or tested on a device; it requires macOS/Xcode and signing configuration for both app targets. This repository is a work-in-progress source snapshot, not an install-ready iOS release.
+Development continues from the existing app. A salary entry starts a pay cycle on its recorded date; the next salary entry closes it. Overview defaults to that cycle; Calendar month remains available and isolates the selected month. Confirmed manual income in the active pay cycle is required before photo picking, gallery discovery or queued OCR can run. Extra income contributes to that same cycle.
+
+Manual expenses can be added from Overview without a receipt. Settings → Manage data can delete selected record types by pay cycle or across all dates after an in-app confirmation. The photo picker offers Expense or Income. Complete supported slips selected this way update totals immediately; unreadable details and conflicting duplicates need correction. Readable gallery and shared slips also update totals automatically. KBank remains provisional without a genuine validated sample. Scan center lists pending receipts across all dates, including undated receipts, and links failed imports to manual review. Confirmed records alone affect totals. Picking an already imported image never counts it again.
+
+Both iOS and Android now implement local notification permission and posting handlers. Optional spending alerts use the active pay cycle, notify at 80% and 100%, and persist accepted thresholds to avoid repeated alerts. Alerts are evaluated while the app is running, on relevant record/preference changes, and on resume; OS settings and Focus can suppress presentation. Native notification display still needs a physical-device check.
+
+Savings are entered separately, never inferred from net income. Entries snapshot their exchange rate and goal. Earned companion rewards are persisted in the same database transaction as savings changes, survive later deletion/decreases, grow to level 10, then unlock outfits. The animated cat companion is also the centered Overview navigation button on main screens and editors. The shared navigation shell switches tabs without sliding overlapping pages. The UI uses a compact neutral palette.
+
+Fresh Flutter analysis and regression tests, native build results, and remaining device checks are recorded in [validation](docs/VALIDATION.md). Real receipt OCR accuracy and KBank layout coverage are not established by these checks. This remains a private development app, with no public publication or deployment.
 
 ## Run
 
@@ -52,14 +60,14 @@ The current goal is private use on your own phone; public launch is optional lat
 
 Private release signing material is stored locally in ignored `android/private-signing/sliptrack-private.jks` and `android/key.properties`. Keep a secure backup of both for future updates; neither file is committed or included in the app's financial-data export. The release build script reads them locally and never prints their passwords.
 
-Main shows exactly the selected calendar month: income, expenses, net flow, recent receipts and review counts all use the same month. Previous/next controls and a date picker change the month. Transactions and Analytics provide the combined history across months, with THB and MMK still separated. Receipts without a transaction date remain in the review/history screens until a date is supplied.
+Overview defaults to the selected salary-to-next-salary period. The Calendar month tab shows exactly the selected calendar month. Income, expenses, remaining money, recorded savings, recent receipts and review counts all respect the selected period. Remaining money is not automatically counted as savings. Transactions and Analytics provide the combined history across months, with THB and MMK still separated. Undated receipts remain visible in Scan center and history until a date is supplied.
 ## First import
 
-1. Open SlipTrack and choose Get started. Automatic scanning is off until enabled. Initial discovery starts from onboarding time; use Import Historical Slips to choose an earlier date.
+1. Open SlipTrack, choose Get started, and add your salary with its received date and planned savings reserve to unlock scanning. Automatic scanning is off until enabled. Scan Now asks for an album or all accessible photos and scans the selected source across all dates.
 2. Add account profiles in Settings if desired. These are local profiles, with no connection to the bank. Masked suffixes and holder names never establish ownership by themselves.
 3. Choose Import Photos. The system picker works without full-library access. Android also accepts image sharing from other apps. iOS includes a Share extension that stages explicitly shared images in an encrypted App Group inbox; open SlipTrack to finish importing.
 4. On Scan center, optionally enable automatic scanning and grant full or selected-photo access. Review the scope and historical date before enabling.
-5. Open an imported transaction, compare it with the receipt, correct fields, choose its direction/category/account and confirm. Until confirmation, it is excluded from all financial totals. Failed OCR can be retried or converted to a manual review record.
+5. Open an imported transaction, compare it with the receipt, correct fields, choose its direction/category/account and confirm. Pending records are excluded from totals; readable picked, gallery and shared receipts are confirmed at import. Failed OCR can be retried or converted to a manual review record.
 
 No real receipt photos or personal identifiers from the supplied examples are committed to the project. Tests use synthetic identities and references while preserving relevant label patterns.
 
@@ -68,12 +76,12 @@ No real receipt photos or personal identifiers from the supplied examples are co
 - Material 3 light/dark themes, GoRouter navigation, Riverpod data providers, mobile navigation and a wider-screen rail.
 - Onboarding, dashboard, account creation, searchable/filterable transaction history, receipt review/edit/delete, scan center, spending analytics and settings.
 - Separate THB/MMK monthly totals. Confirmed internal transfers are excluded from income and expenses. Analytics has daily/weekly/monthly expense groups and category/bank distributions.
-- Exact integer minor-unit arithmetic. English/numeric date parsing, Thai Buddhist Era conversion, Thai/Myanmar digit normalization and abbreviated/local month parsing. Receipt wall-clock times and provider-based IANA timezone defaults are stored separately; no currency conversion is performed.
+- Exact integer minor-unit arithmetic. English/numeric date parsing, Thai Buddhist Era conversion, Thai/Myanmar digit normalization and abbreviated/local month parsing. Receipt wall-clock times and provider-based IANA timezone defaults are stored separately; original currencies remain unchanged; approximate offline THB estimates are shown separately.
 - Provider parser interfaces and KBZ/TrueMoney rules based on the supplied receipt structures. KBank is a provisional generic label parser, pending real authorized samples. Bank logos alone are insufficient; ambiguous provider matches are not auto-imported.
 - On-device Android bundled Latin ML Kit and iOS Vision OCR, block bounds normalized to top-left coordinates, available engine confidence, script detection of recognized output, and a manual correction fallback.
 - Android MediaStore/ContentObserver, Photo Picker and WorkManager discovery hints. iOS PhotoKit observation/full/limited permission support, PHPicker and encrypted Share extension inbox.
 - Durable encrypted queue, paged media discovery, indexed queue states, pause/resume, failed-item retry, permission rechecks, checkpoints and catch-up after restart/resume. Source ID/content hash/provider reference checks prevent repeat imports; uncertain composite/reference conflicts remain reviewable.
-- Drift/SQLite encrypted record payloads, HMAC search digests, schema migrations and indexes. Device-protected keys, optional biometric/device lock, password-encrypted local backup/restore and data deletion.
+- Drift/SQLite encrypted record payloads, HMAC search digests, schema migrations and indexes, including a separate encrypted savings table in schema version 4. Device-protected keys, optional biometric/device lock, password-encrypted local backup/restore and data deletion.
 - English UI with Burmese/Thai primary navigation, action and form labels. Some longer notices, status messages, accessibility copy and enum labels currently fall back to English; full linguistic QA is a release gate.
 
 ## Layout
@@ -106,6 +114,7 @@ Production readiness requires native device validation, release signing, store p
 
 Android background OCR/import is not implemented as a headless Flutter worker: the worker provides a deferred discovery hint and foreground catch-up performs extraction. iOS performs observation/import while running and catch-up when reopened. See the platform document for precise boundaries.
 
+### Current personal-use budget workflow
+Salary entries start a period on their recorded date; the next salary closes it. Extra income does not start another period. Each income entry can reserve an amount for planned savings. Spendable money is income minus reserved savings minus expenses; the reserve does not create an actual savings entry or unlock rewards. Historical transactions use their receipt dates.
 
-#   s l i p t r a c k  
- 
+Scan Now offers all accessible photos or a photo album (Android media folder). Automatic scanning remembers that choice and runs within existing OS/foreground restrictions. Readable receipts from discovery, explicit picking and sharing are automatically confirmed, defaulting to expense when ownership does not identify another direction. Missing amounts/dates and conflicting duplicates stay excluded for correction; no guessed current date is substituted. Existing pending records with recoverable stored OCR are repaired when scanning resumes.

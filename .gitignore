@@ -8,6 +8,7 @@ build/
 *.iml
 .DS_Store
 coverage/
+android/.kotlin/
 android/key.properties
 *.jks
 *.keystore

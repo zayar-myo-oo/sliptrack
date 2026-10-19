@@ -81,6 +81,11 @@ abstract interface class GalleryService {
 }
 
 class NativeGallery implements GalleryService {
+  String? albumId;
+  Future<List<Map<String, dynamic>>> albums() async =>
+      (await channel.invokeListMethod('albums') ?? [])
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
   static const channel = OnDeviceOCR.channel;
   static const events = EventChannel('app.sliptrack/media_changes');
   @override
@@ -102,6 +107,7 @@ class NativeGallery implements GalleryService {
     required int offset,
   }) async => List<String>.from(
     await channel.invokeMethod('assets', {
+          'albumId': albumId,
           'afterMs': afterMs,
           'sinceMs': sinceMs,
           'offset': offset,

@@ -36,7 +36,7 @@ class CompanionCard extends ConsumerWidget {
                           const LText('Your savings buddy'),
                           Text(
                             'Lv. ${coach.progress.level} / 10',
-                            style: Theme.of(context).textTheme.headlineSmall,
+                            style: Theme.of(context).textTheme.titleLarge,
                           ),
                           LText(
                             life.mood == PetMood.crying
@@ -49,8 +49,8 @@ class CompanionCard extends ConsumerWidget {
                       ),
                     ),
                     SizedBox(
-                      width: 130,
-                      height: 145,
+                      width: 98,
+                      height: 106,
                       child: Buddy(
                         mood: life.mood,
                         progress: coach.progress,
@@ -65,9 +65,7 @@ class CompanionCard extends ConsumerWidget {
                   borderRadius: BorderRadius.circular(10),
                 ),
                 const SizedBox(height: 8),
-                Text(
-                  '${tr(context, 'This month’s life')}: ${life.lifePercent}%',
-                ),
+                Text('${tr(context, 'Available money')}: ${life.lifePercent}%'),
                 TextButton(
                   onPressed: () => context.push('/companion'),
                   child: const LText('Savings & companion'),
@@ -86,11 +84,13 @@ class Buddy extends StatefulWidget {
     required this.mood,
     required this.progress,
     this.outfit = 0,
+    this.compact = false,
     super.key,
   });
   final PetMood mood;
   final PetProgress progress;
   final int outfit;
+  final bool compact;
   @override
   State<Buddy> createState() => _BuddyState();
 }
@@ -118,13 +118,15 @@ class _BuddyState extends State<Buddy> with SingleTickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) => Semantics(
-    label: 'Savings buddy, level ${widget.progress.level}, ${widget.mood.name}',
+    label: 'Savings cat, level ${widget.progress.level}, ${widget.mood.name}',
     child: AnimatedBuilder(
       animation: motion,
       builder: (_, _) => CustomPaint(
         painter: _BuddyPainter(
           widget.mood,
-          widget.progress.bodyScale,
+          widget.compact
+              ? (widget.progress.bodyScale * .9 + .25).clamp(.7, 1.0)
+              : widget.progress.bodyScale,
           widget.outfit,
           motion.value,
         ),
@@ -133,78 +135,252 @@ class _BuddyState extends State<Buddy> with SingleTickerProviderStateMixin {
   );
 }
 
+/// A chubby cream cat with a ginger tabby crown. The head is drawn large so
+/// the face still reads at bottom-navigation size; mood changes the eyes,
+/// brows and mouth, and unlocked outfits add a scarf and a coin badge.
 class _BuddyPainter extends CustomPainter {
   _BuddyPainter(this.mood, this.growth, this.outfit, this.phase);
   final PetMood mood;
   final double growth, phase;
   final int outfit;
+
+  static const fur = Color(0xfffff3e2);
+  static const ginger = Color(0xfff2a65a);
+  static const gingerDark = Color(0xffe08a3c);
+  static const outline = Color(0xff4a3426);
+  static const innerEar = Color(0xffffc2c0);
+  static const blush = Color(0x66ff8f8f);
+
   @override
   void paint(Canvas canvas, Size size) {
-    final unit = math.min(size.width, size.height) / 140;
-    canvas.translate(
-      size.width / 2,
-      size.height * .60 + math.sin(phase * math.pi * 2) * 3,
-    );
+    final unit = math.min(size.width, size.height) / 150;
+    final wave = math.sin(phase * math.pi * 2);
+    canvas.translate(size.width / 2, size.height * .56 + wave * 2.5);
     canvas.scale(unit * growth);
-    final paint = Paint();
-    canvas.drawOval(
-      const Rect.fromLTWH(-46, 48, 92, 12),
-      paint..color = const Color(0x18000000),
+    final p = Paint()..isAntiAlias = true;
+    final line = Paint()
+      ..color = outline
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.2
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    // Ground shadow.
+    p.color = const Color(0x1a000000);
+    canvas.drawOval(const Rect.fromLTWH(-42, 60, 84, 10), p);
+
+    // Tail: a soft ginger curl that sways.
+    final tail = Path()
+      ..moveTo(28, 50)
+      ..cubicTo(64, 54, 70 + wave * 6, 18, 54 + wave * 6, 4);
+    canvas.drawPath(
+      tail,
+      Paint()
+        ..color = outline
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 16
+        ..strokeCap = StrokeCap.round,
     );
-    final color = outfit == 0
-        ? const Color(0xff5ac6ad)
-        : HSVColor.fromAHSV(1, (outfit * 67.0) % 360, .42, .86).toColor();
-    paint.color = color;
-    canvas.drawOval(const Rect.fromLTWH(-51, -56, 102, 108), paint);
-    canvas.drawOval(const Rect.fromLTWH(-41, 35, 32, 20), paint);
-    canvas.drawOval(const Rect.fromLTWH(9, 35, 32, 20), paint);
-    canvas.drawCircle(const Offset(-30, -48), 17, paint);
-    canvas.drawCircle(const Offset(30, -48), 17, paint);
-    paint.color = const Color(0xff153c38);
-    final blink = phase > .91 && phase < .96;
-    for (final x in [-18.0, 18.0]) {
-      canvas.drawOval(
-        Rect.fromCenter(
-          center: Offset(x, -7),
-          width: 7,
-          height: blink ? 2 : 11,
-        ),
-        paint,
+    canvas.drawPath(
+      tail,
+      Paint()
+        ..color = ginger
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 10.5
+        ..strokeCap = StrokeCap.round,
+    );
+
+    // Body.
+    const body = Rect.fromLTWH(-36, 14, 72, 54);
+    p.color = fur;
+    canvas.drawOval(body, p);
+    canvas.drawOval(body, line);
+    // Belly patch.
+    p.color = Colors.white;
+    canvas.drawOval(const Rect.fromLTWH(-20, 30, 40, 32), p);
+
+    // Feet.
+    for (final x in [-20.0, 20.0]) {
+      final foot = Rect.fromCenter(
+        center: Offset(x, 64),
+        width: 24,
+        height: 13,
+      );
+      p.color = fur;
+      canvas.drawOval(foot, p);
+      canvas.drawOval(foot, line);
+    }
+
+    // Ears, behind the head.
+    for (final side in [-1.0, 1.0]) {
+      final ear = Path()
+        ..moveTo(side * 48, -26)
+        ..quadraticBezierTo(side * 58, -70, side * 40, -74)
+        ..quadraticBezierTo(side * 26, -66, side * 14, -50)
+        ..close();
+      p.color = ginger;
+      canvas.drawPath(ear, p);
+      canvas.drawPath(ear, line);
+      p.color = innerEar;
+      canvas.drawPath(
+        Path()
+          ..moveTo(side * 42, -38)
+          ..quadraticBezierTo(side * 48, -62, side * 39, -64)
+          ..quadraticBezierTo(side * 30, -58, side * 24, -50)
+          ..close(),
+        p,
       );
     }
-    paint
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3
-      ..strokeCap = StrokeCap.round;
-    final smile = Path()
-      ..moveTo(-9, 14)
-      ..quadraticBezierTo(0, mood == PetMood.happy ? 25 : 4, 9, 14);
-    canvas.drawPath(smile, paint);
-    paint.style = PaintingStyle.fill;
-    if (mood == PetMood.crying) {
-      paint.color = const Color(0xff4ba9ee);
-      for (final x in [-22.0, 22.0]) {
-        canvas.drawOval(Rect.fromLTWH(x - 4, 3 + phase * 23, 8, 14), paint);
+
+    // Head.
+    const head = Rect.fromLTWH(-56, -64, 112, 92);
+    p.color = fur;
+    canvas.drawOval(head, p);
+    // Ginger crown with three tabby stripes, clipped to the head.
+    canvas.save();
+    canvas.clipPath(Path()..addOval(head));
+    p.color = ginger;
+    canvas.drawOval(const Rect.fromLTWH(-64, -92, 128, 70), p);
+    p.color = gingerDark;
+    for (final x in [-14.0, 0.0, 14.0]) {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(center: Offset(x, -56), width: 6, height: 20),
+          const Radius.circular(3),
+        ),
+        p,
+      );
+    }
+    canvas.restore();
+    canvas.drawOval(head, line);
+
+    // Cheeks.
+    p.color = blush;
+    for (final x in [-32.0, 32.0]) {
+      canvas.drawOval(
+        Rect.fromCenter(center: Offset(x, 2), width: 18, height: 10),
+        p,
+      );
+    }
+
+    // Eyes.
+    final blink = phase > .9 && phase < .95;
+    for (final side in [-1.0, 1.0]) {
+      final c = Offset(side * 20, -12);
+      if (blink || mood == PetMood.happy && phase > .5 && phase < .56) {
+        canvas.drawLine(c.translate(-6, 0), c.translate(6, 0), line);
+      } else if (mood == PetMood.crying) {
+        // Squeezed "> <" eyes.
+        canvas.drawPath(
+          Path()
+            ..moveTo(c.dx - side * 6, c.dy - 6)
+            ..lineTo(c.dx + side * 4, c.dy)
+            ..lineTo(c.dx - side * 6, c.dy + 6),
+          line,
+        );
+      } else {
+        p.color = outline;
+        canvas.drawOval(Rect.fromCenter(center: c, width: 15, height: 18), p);
+        p.color = Colors.white;
+        canvas.drawCircle(c.translate(-3, -4), 3.6, p);
+        canvas.drawCircle(c.translate(3, 4), 1.6, p);
+      }
+      if (mood != PetMood.happy) {
+        // Brows tilt up toward the middle when worried or sad.
+        canvas.drawLine(Offset(side * 28, -30), Offset(side * 12, -34), line);
       }
     }
+
+    // Nose and mouth.
+    p.color = const Color(0xffff8a8a);
+    canvas.drawPath(
+      Path()
+        ..moveTo(-4.5, 2)
+        ..quadraticBezierTo(0, 0, 4.5, 2)
+        ..quadraticBezierTo(0, 8, -4.5, 2),
+      p,
+    );
+    if (mood == PetMood.happy) {
+      // Open smile.
+      final mouth = Path()
+        ..moveTo(-9, 8)
+        ..quadraticBezierTo(0, 22, 9, 8)
+        ..close();
+      p.color = const Color(0xffd9606a);
+      canvas.drawPath(mouth, p);
+      canvas.drawPath(mouth, line);
+    } else if (mood == PetMood.worried) {
+      canvas.drawPath(
+        Path()
+          ..moveTo(-8, 12)
+          ..quadraticBezierTo(-4, 9, 0, 12)
+          ..quadraticBezierTo(4, 15, 8, 12),
+        line,
+      );
+      // Sweat drop.
+      p.color = const Color(0xff8ccaf5);
+      canvas.drawPath(
+        Path()
+          ..moveTo(44, -38)
+          ..quadraticBezierTo(38, -26, 44, -24)
+          ..quadraticBezierTo(50, -26, 44, -38),
+        p,
+      );
+    } else {
+      canvas.drawPath(
+        Path()
+          ..moveTo(-8, 15)
+          ..quadraticBezierTo(0, 8, 8, 15),
+        line,
+      );
+      p.color = const Color(0xff7cc4f4);
+      for (final x in [-22.0, 22.0]) {
+        canvas.drawOval(Rect.fromLTWH(x - 3.5, -2 + phase * 20, 7, 11), p);
+      }
+    }
+
+    // Whiskers.
+    final whisker = Paint()
+      ..color = outline.withValues(alpha: .5)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.8
+      ..strokeCap = StrokeCap.round;
+    for (final side in [-1.0, 1.0]) {
+      canvas.drawLine(Offset(side * 42, -2), Offset(side * 62, -6), whisker);
+      canvas.drawLine(Offset(side * 42, 5), Offset(side * 62, 7), whisker);
+    }
+
+    // Paws hugging a coin.
+    p.color = const Color(0xffffcf5a);
+    canvas.drawCircle(const Offset(0, 40), 11, p);
+    canvas.drawCircle(const Offset(0, 40), 11, line);
+    p.color = const Color(0xffe7a93a);
+    canvas.drawCircle(const Offset(0, 40), 5.5, p);
+    for (final x in [-11.0, 11.0]) {
+      final paw = Rect.fromCenter(center: Offset(x, 42), width: 15, height: 12);
+      p.color = fur;
+      canvas.drawOval(paw, p);
+      canvas.drawOval(paw, line);
+    }
+
+    // Unlocked outfit: a scarf in a colour that changes per outfit.
     if (outfit > 0) {
-      paint.color = const Color(0xffffcf64);
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          const Rect.fromLTWH(-43, 22, 86, 13),
-          const Radius.circular(6),
-        ),
-        paint,
+      final scarf = outfit == 1
+          ? const Color(0xff2e8b57)
+          : HSVColor.fromAHSV(1, (outfit * 67.0) % 360, .55, .75).toColor();
+      p.color = scarf;
+      final band = RRect.fromRectAndRadius(
+        const Rect.fromLTWH(-38, 18, 76, 12),
+        const Radius.circular(6),
       );
-      canvas.drawCircle(const Offset(22, 43), 9, paint);
-      canvas.drawOval(const Rect.fromLTWH(-45, -62, 90, 13), paint);
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          const Rect.fromLTWH(-29, -88, 58, 30),
-          const Radius.circular(8),
-        ),
-        paint,
+      canvas.drawRRect(band, p);
+      canvas.drawRRect(band, line);
+      final tailEnd = RRect.fromRectAndRadius(
+        const Rect.fromLTWH(18, 24, 12, 22),
+        const Radius.circular(5),
       );
+      canvas.drawRRect(tailEnd, p);
+      canvas.drawRRect(tailEnd, line);
     }
   }
 

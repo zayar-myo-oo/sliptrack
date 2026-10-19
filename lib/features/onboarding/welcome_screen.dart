@@ -17,7 +17,7 @@ class WelcomeScreen extends ConsumerWidget {
           const Icon(
             Icons.receipt_long_rounded,
             size: 88,
-            color: Color(0xff087f72),
+            color: Color(0xff1e4b3a),
           ),
           const SizedBox(height: 32),
           LText(

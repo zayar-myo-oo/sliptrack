@@ -4,6 +4,15 @@ enum Bank { trueMoney, kbank, kbz, unknown }
 
 enum Direction { income, expense, internalTransfer, unknown }
 
+extension DirectionLabel on Direction {
+  String get label => switch (this) {
+    Direction.income => 'Money in',
+    Direction.expense => 'Money out',
+    Direction.internalTransfer => 'Own transfer',
+    Direction.unknown => 'Choose direction',
+  };
+}
+
 enum ReviewStatus { pending, confirmed }
 
 extension BankLabel on Bank {
@@ -82,7 +91,9 @@ class Slip {
     this.accountId,
     this.senderBank,
     this.receiverBank,
+    this.savingsReserveMinor = 0,
     this.isManualIncome = false,
+    this.isManualExpense = false,
     DateTime? createdAt,
     this.updatedAt,
   }) : createdAt = createdAt ?? DateTime.now().toUtc();
@@ -109,7 +120,9 @@ class Slip {
   double ruleScore;
   double? ocrConfidence;
   bool possibleDuplicate;
+  int savingsReserveMinor;
   final bool isManualIncome;
+  final bool isManualExpense;
   final DateTime createdAt;
   DateTime? updatedAt;
   bool get valid =>
@@ -117,9 +130,14 @@ class Slip {
       amountMinor! > 0 &&
       date != null &&
       direction != Direction.unknown &&
-      (isManualIncome ? direction == Direction.income && ['THB', 'MMK'].contains(currency) : bank != Bank.unknown && currency == bank.currency);
+      (isManualExpense
+          ? direction == Direction.expense && ['THB', 'MMK'].contains(currency)
+          : isManualIncome
+          ? direction == Direction.income && ['THB', 'MMK'].contains(currency)
+          : bank != Bank.unknown && currency == bank.currency);
   Map<String, dynamic> toJson() => {
     'id': id,
+    'savingsReserveMinor': savingsReserveMinor,
     'bank': bank.name,
     'amountMinor': amountMinor,
     'currency': currency,
@@ -147,6 +165,7 @@ class Slip {
     'createdAt': createdAt.toIso8601String(),
     'updatedAt': (updatedAt ?? createdAt).toIso8601String(),
     'isManualIncome': isManualIncome,
+    'isManualExpense': isManualExpense,
   };
   factory Slip.fromJson(Map<String, dynamic> j) => Slip(
     id: j['id'],
@@ -163,6 +182,7 @@ class Slip {
     description: j['description'] ?? '',
     type: j['type'] ?? '',
     direction: Direction.values.byName(j['direction']),
+    savingsReserveMinor: (j['savingsReserveMinor'] as int?) ?? 0,
     review: ReviewStatus.values.byName(j['review']),
     category: j['category'],
     source: j['source'],
@@ -181,6 +201,7 @@ class Slip {
     createdAt: DateTime.parse(j['createdAt']),
     updatedAt: DateTime.tryParse(j['updatedAt'] ?? ''),
     isManualIncome: j['isManualIncome'] ?? false,
+    isManualExpense: j['isManualExpense'] ?? false,
   );
 }
 

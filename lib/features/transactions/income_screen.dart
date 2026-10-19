@@ -9,7 +9,13 @@ import '../../shared/components.dart';
 import '../../shared/localized_text.dart';
 
 class IncomeScreen extends ConsumerStatefulWidget {
-  const IncomeScreen({this.id, this.initialMonth, super.key});
+  const IncomeScreen({
+    this.id,
+    this.initialMonth,
+    this.expense = false,
+    super.key,
+  });
+  final bool expense;
   final String? id;
   final DateTime? initialMonth;
   @override
@@ -19,6 +25,7 @@ class IncomeScreen extends ConsumerStatefulWidget {
 class _IncomeState extends ConsumerState<IncomeScreen> {
   final form = GlobalKey<FormState>();
   final amount = TextEditingController(), note = TextEditingController();
+  final reserve = TextEditingController(text: '0');
   String currency = 'THB', category = 'Salary';
   DateTime date = DateTime.now();
   Slip? original;
@@ -26,9 +33,12 @@ class _IncomeState extends ConsumerState<IncomeScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.expense) category = 'Food';
     final month = widget.initialMonth;
-    if (month != null && (month.month != date.month || month.year != date.year))
+    if (month != null &&
+        (month.month != date.month || month.year != date.year)) {
       date = DateTime(month.year, month.month);
+    }
     if (widget.id != null) {
       loading = true;
       load();
@@ -37,7 +47,11 @@ class _IncomeState extends ConsumerState<IncomeScreen> {
 
   Future<void> load() async {
     final existing = (await ref.read(repositoryProvider).slips())
-        .where((s) => s.id == widget.id && s.isManualIncome)
+        .where(
+          (s) =>
+              s.id == widget.id &&
+              (widget.expense ? s.isManualExpense : s.isManualIncome),
+        )
         .firstOrNull;
     if (!mounted) return;
     if (existing == null) {
@@ -50,6 +64,7 @@ class _IncomeState extends ConsumerState<IncomeScreen> {
     date = existing.date!;
     amount.text =
         '${existing.amountMinor! ~/ 100}.${(existing.amountMinor! % 100).toString().padLeft(2, '0')}';
+    reserve.text = (existing.savingsReserveMinor / 100).toStringAsFixed(2);
     note.text = existing.description;
     setState(() => loading = false);
   }
@@ -58,21 +73,28 @@ class _IncomeState extends ConsumerState<IncomeScreen> {
     if (saving || !form.currentState!.validate()) return;
     setState(() => saving = true);
     try {
-      final s = original ?? Slip(id: newId(), isManualIncome: true);
+      final s =
+          original ??
+          Slip(
+            id: newId(),
+            isManualIncome: !widget.expense,
+            isManualExpense: widget.expense,
+          );
+      s.savingsReserveMinor = widget.expense ? 0 : parseMinor(reserve.text)!;
       s.amountMinor = parseMinor(amount.text);
       s.currency = currency;
       s.date = date;
       s.zone = currency == 'MMK' ? 'Asia/Yangon' : 'Asia/Bangkok';
-      s.direction = Direction.income;
+      s.direction = widget.expense ? Direction.expense : Direction.income;
       s.review = ReviewStatus.confirmed;
       s.description = note.text.trim();
       s.category = category;
-      s.type = 'Manual income';
-      s.receiver = 'Manual income';
+      s.type = widget.expense ? 'Manual expense' : 'Manual income';
+      s.receiver = widget.expense ? category : 'Manual income';
       await ref.read(repositoryProvider).saveSlip(s);
       if (mounted) context.pop();
     } catch (_) {
-      if (mounted) message(context, 'Could not save income. Please try again.');
+      if (mounted) message(context, 'Could not save. Please try again.');
     } finally {
       if (mounted) setState(() => saving = false);
     }
@@ -80,6 +102,7 @@ class _IncomeState extends ConsumerState<IncomeScreen> {
 
   @override
   void dispose() {
+    reserve.dispose();
     amount.dispose();
     note.dispose();
     super.dispose();
@@ -88,7 +111,7 @@ class _IncomeState extends ConsumerState<IncomeScreen> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
-      title: const LText('Manual income'),
+      title: LText(widget.expense ? 'Manual expense' : 'Manual income'),
       actions: [
         if (widget.id != null)
           IconButton(
@@ -99,7 +122,11 @@ class _IncomeState extends ConsumerState<IncomeScreen> {
                     final ok = await showDialog<bool>(
                       context: context,
                       builder: (c) => AlertDialog(
-                        title: const LText('Delete this income?'),
+                        title: LText(
+                          widget.expense
+                              ? 'Delete this expense?'
+                              : 'Delete this income?',
+                        ),
                         actions: [
                           TextButton(
                             onPressed: () => Navigator.pop(c, false),
@@ -127,12 +154,14 @@ class _IncomeState extends ConsumerState<IncomeScreen> {
             child: ListView(
               padding: const EdgeInsets.all(20),
               children: [
-                const LText(
-                  'Enter income yourself. It is recorded only in the month of the date below.',
+                LText(
+                  widget.expense
+                      ? 'Add spending without a receipt.'
+                      : 'Salary starts a new period on this date, until your next salary. Set aside your savings plan before spending.',
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 12),
                 TextFormField(
-                  key: const Key('incomeAmount'),
+                  key: Key(widget.expense ? 'expenseAmount' : 'incomeAmount'),
                   controller: amount,
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
@@ -140,11 +169,34 @@ class _IncomeState extends ConsumerState<IncomeScreen> {
                   decoration: InputDecoration(labelText: tr(context, 'Amount')),
                   validator: (v) =>
                       (parseMinor(v ?? '') ?? 0) <= 0 ||
-                          (v ?? '').startsWith('-')
+                          normalizeDigits(v ?? '').trim().startsWith('-')
                       ? tr(context, 'Enter a positive amount')
                       : null,
                 ),
                 const SizedBox(height: 12),
+                if (!widget.expense) ...[
+                  TextFormField(
+                    key: const Key('savingsReserve'),
+                    controller: reserve,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: 'Savings to set aside ($currency)',
+                      helperText:
+                          'Reserved from spending. Not recorded as actual savings.',
+                    ),
+                    validator: (v) {
+                      final n = parseMinor(v ?? '');
+                      return n == null ||
+                              normalizeDigits(v ?? '').trim().startsWith('-') ||
+                              n > (parseMinor(amount.text) ?? 0)
+                          ? 'Enter an amount from 0 to your income'
+                          : null;
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 DropdownButtonFormField<String>(
                   isExpanded: true,
                   initialValue: currency,
@@ -168,7 +220,9 @@ class _IncomeState extends ConsumerState<IncomeScreen> {
                       firstDate: DateTime(2000),
                       lastDate: DateTime(2100),
                     );
-                    if (chosen != null) setState(() => date = chosen);
+                    if (chosen != null && mounted) {
+                      setState(() => date = chosen);
+                    }
                   },
                 ),
                 DropdownButtonFormField<String>(
@@ -177,9 +231,26 @@ class _IncomeState extends ConsumerState<IncomeScreen> {
                   decoration: InputDecoration(
                     labelText: tr(context, 'Category'),
                   ),
-                  items: ['Salary', 'Extra income', 'Gift', 'Other income']
-                      .map((c) => DropdownMenuItem(value: c, child: LText(c)))
-                      .toList(),
+                  items:
+                      (widget.expense
+                              ? [
+                                  'Food',
+                                  'Transport',
+                                  'Shopping',
+                                  'Bills',
+                                  'Health',
+                                  'Other expenses',
+                                ]
+                              : [
+                                  'Salary',
+                                  'Extra income',
+                                  'Gift',
+                                  'Other income',
+                                ])
+                          .map(
+                            (c) => DropdownMenuItem(value: c, child: LText(c)),
+                          )
+                          .toList(),
                   onChanged: (v) => category = v!,
                 ),
                 const SizedBox(height: 12),
@@ -192,7 +263,7 @@ class _IncomeState extends ConsumerState<IncomeScreen> {
                 const SizedBox(height: 24),
                 FilledButton(
                   onPressed: saving ? null : save,
-                  child: const LText('Save income'),
+                  child: LText(widget.expense ? 'Save expense' : 'Save income'),
                 ),
               ],
             ),

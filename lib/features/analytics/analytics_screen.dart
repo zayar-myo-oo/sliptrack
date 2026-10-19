@@ -5,7 +5,8 @@ import 'package:intl/intl.dart';
 import '../../app/state.dart';
 import '../../core/models.dart';
 import '../../shared/components.dart';
-import '../../shared/estimated_cash_flow.dart';
+import '../../shared/category_chart.dart';
+import '../../shared/design.dart';
 
 class AnalyticsScreen extends ConsumerStatefulWidget {
   const AnalyticsScreen({super.key});
@@ -54,14 +55,18 @@ class _AnalyticsState extends ConsumerState<AnalyticsScreen> {
         ifAbsent: () => s.amountMinor!,
       );
     }
-    final totals = totalsFor(all)[currency]!;
+    final periodKeys = groups.keys.toList()..sort();
+    final recent = periodKeys.length > 6
+        ? periodKeys.sublist(periodKeys.length - 6)
+        : periodKeys;
     return PageBody('Analytics', [
-      EstimatedCashFlowCard(
-        totals: totalsFor(all),
-        scope: tr(context, 'All months'),
+      LText(
+        'All months · Confirmed spending',
+        style: TextStyle(fontSize: 13, color: Palette.muted(context)),
       ),
-      const SizedBox(height: 16),
+      const SizedBox(height: 14),
       SegmentedButton<String>(
+        showSelectedIcon: false,
         segments: [
           'THB',
           'MMK',
@@ -69,57 +74,75 @@ class _AnalyticsState extends ConsumerState<AnalyticsScreen> {
         selected: {currency},
         onSelectionChanged: (v) => setState(() => currency = v.first),
       ),
-      const SizedBox(height: 20),
-      BalanceCard(
-        currency: currency,
-        totals: totals,
-        caption: 'ALL-TIME CASH FLOW',
-      ),
-      const LText('All-time confirmed totals · Internal transfers excluded'),
-      const SizedBox(height: 20),
-      Wrap(
-        spacing: 8,
-        children: ['Daily', 'Weekly', 'Monthly']
-            .map(
-              (p) => ChoiceChip(
-                label: Text(p),
-                selected: period == p,
-                onSelected: (_) => setState(() => period = p),
+      const SizedBox(height: 12),
+      CategoryChart(amounts: categories, currency: currency),
+      SectionHeader(
+        LText('$period spending'),
+        action: SegmentedButton<String>(
+          showSelectedIcon: false,
+          style: const ButtonStyle(
+            visualDensity: VisualDensity(horizontal: -3, vertical: -3),
+          ),
+          segments: [
+            for (final p in ['Daily', 'Weekly', 'Monthly'])
+              ButtonSegment(
+                value: p,
+                label: LText(p, style: const TextStyle(fontSize: 12)),
               ),
-            )
-            .toList(),
-      ),
-      const SizedBox(height: 24),
-      LText('$period spending', style: Theme.of(context).textTheme.titleLarge),
-      ..._bars(groups, currency),
-      const SizedBox(height: 24),
-      LText('By category', style: Theme.of(context).textTheme.titleLarge),
-      ..._bars(categories, currency),
-      const SizedBox(height: 24),
-      LText('By bank', style: Theme.of(context).textTheme.titleLarge),
-      ..._bars(banks, currency),
-      if (expenses.isEmpty)
-        const EmptyState(
-          'Your trends will appear here',
-          'Confirm receipts to start exploring your spending.',
+          ],
+          selected: {period},
+          onSelectionChanged: (v) => setState(() => period = v.first),
         ),
+      ),
+      Surface(
+        padding: const EdgeInsets.fromLTRB(16, 20, 16, 14),
+        child: recent.isEmpty
+            ? const EmptyState(
+                'Your trends will appear here',
+                'Confirm receipts to start exploring your spending.',
+              )
+            : _Trend(
+                labels: [
+                  for (final k in recent)
+                    period == 'Monthly'
+                        ? DateFormat('MMM').format(DateTime.parse('$k-01'))
+                        : DateFormat('d MMM').format(DateTime.parse(k)),
+                ],
+                values: [for (final k in recent) groups[k]!],
+                currency: currency,
+              ),
+      ),
+      const SectionHeader(LText('By bank')),
+      Surface(
+        child: banks.isEmpty
+            ? LText(
+                'No confirmed spending yet',
+                style: TextStyle(color: Palette.muted(context)),
+              )
+            : Column(children: _bars(banks, currency)),
+      ),
     ]);
   }
 
   List<Widget> _bars(Map<String, int> data, String currency) {
     final max = data.values.fold<int>(0, (a, b) => a > b ? a : b);
-    final keys = data.keys.toList()..sort();
+    final keys = data.keys.toList()
+      ..sort((a, b) => data[b]!.compareTo(data[a]!));
     return keys
         .map(
           (key) => Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10),
+            padding: const EdgeInsets.symmetric(vertical: 8),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Expanded(child: Text(key)),
+                    Expanded(
+                      child: Text(
+                        key,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
                     Text(money(data[key]!, currency)),
                   ],
                 ),
@@ -128,7 +151,9 @@ class _AnalyticsState extends ConsumerState<AnalyticsScreen> {
                   borderRadius: BorderRadius.circular(8),
                   child: LinearProgressIndicator(
                     value: max == 0 ? 0 : data[key]! / max,
-                    minHeight: 10,
+                    minHeight: 8,
+                    color: Palette.brand,
+                    backgroundColor: Palette.soft(context),
                   ),
                 ),
               ],
@@ -136,5 +161,79 @@ class _AnalyticsState extends ConsumerState<AnalyticsScreen> {
           ),
         )
         .toList();
+  }
+}
+
+class _Trend extends StatelessWidget {
+  const _Trend({
+    required this.labels,
+    required this.values,
+    required this.currency,
+  });
+  final List<String> labels;
+  final List<int> values;
+  final String currency;
+  @override
+  Widget build(BuildContext context) {
+    final max = values.fold<int>(1, (a, b) => a > b ? a : b);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          money(values.last, currency),
+          style: Theme.of(context).textTheme.headlineSmall,
+        ),
+        LText(
+          'Latest period',
+          style: TextStyle(fontSize: 12, color: Palette.muted(context)),
+        ),
+        const SizedBox(height: 18),
+        SizedBox(
+          height: 140,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              for (var i = 0; i < values.length; i++)
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        Flexible(
+                          child: FractionallySizedBox(
+                            heightFactor: (values[i] / max).clamp(.04, 1.0),
+                            child: Tooltip(
+                              message: money(values[i], currency),
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: i == values.length - 1
+                                      ? Palette.brand
+                                      : Palette.mint,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          labels[i],
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Palette.muted(context),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 }

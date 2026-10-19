@@ -40,10 +40,17 @@ class _ExchangeRateSettingState extends ConsumerState<ExchangeRateSetting> {
         'mmkPerThbMicros': parseManualRate(controller.text),
         'manualRateUpdatedAt': DateTime.now().toUtc().toIso8601String(),
       });
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: LText('Exchange rate saved')));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: LText('Could not save. Please try again.')),
+        );
+      }
     } finally {
       if (mounted) setState(() => saving = false);
     }

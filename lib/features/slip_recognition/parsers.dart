@@ -19,7 +19,7 @@ int? parseMinor(String input) {
 }
 
 DateTime? parseSlipDate(String input) {
-  var s = normalizeDigits(input);
+  var s = normalizeDigits(input).replaceAll(RegExp(r'\s*:\s*'), ':');
   const months = [
     'Jan',
     'Feb',
@@ -129,15 +129,25 @@ abstract class LabeledSlipParser implements BankSlipParser {
       caseSensitive: false,
     ).firstMatch(s);
     slip.amountMinor = parseMinor(amount?[1] ?? amount?[2] ?? '');
-    slip.date = parseSlipDate(
-      field(s, 'Transaction Time|Transaction date|Date|วันที่'),
-    );
+    slip.date =
+        parseSlipDate(
+          field(s, 'Transaction Time|Transaction date|Date|วันที่'),
+        ) ??
+        parseSlipDate(s);
     slip.reference = field(
       s,
       'Transaction No|Reference number|Reference No|Transaction ID|เลขที่รายการ',
     ).replaceAll(RegExp(r'\s+'), '');
-    if (!RegExp(r'^[A-Za-z0-9-]{6,60}$').hasMatch(slip.reference)) {
+    if (!RegExp(r'^[A-Za-z0-9-]{6,60}$').hasMatch(slip.reference) ||
+        !RegExp(r'[0-9]').hasMatch(slip.reference)) {
       slip.reference = '';
+    }
+    if (slip.reference.isEmpty) {
+      final candidates = RegExp(
+        r'^\s*(\d{12,25})\s*$',
+        multiLine: true,
+      ).allMatches(s).map((m) => m[1]!).toSet();
+      if (candidates.length == 1) slip.reference = candidates.single;
     }
     slip.sender = field(s, 'Transfer From|Sender|From(?! wallet)|ผู้โอน');
     slip.receiver = field(s, 'Transfer To|Receiver|To|ผู้รับ');

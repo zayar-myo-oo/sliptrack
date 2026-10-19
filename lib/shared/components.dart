@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../core/models.dart';
 import 'localized_text.dart';
+import 'design.dart';
 
 void message(BuildContext context, String text) =>
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
@@ -20,16 +21,24 @@ class PageBody extends StatelessWidget {
   Widget build(BuildContext context) => CustomScrollView(
     slivers: [
       SliverAppBar(
-        title: LText(
-          title,
-          style: const TextStyle(fontWeight: FontWeight.w700),
-        ),
+        title: LText(title, style: Theme.of(context).textTheme.headlineSmall),
         actions: actions,
         floating: true,
+        titleSpacing: 20,
       ),
       SliverPadding(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
-        sliver: SliverList.list(children: children),
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+        sliver: SliverToBoxAdapter(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 760),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: children,
+              ),
+            ),
+          ),
+        ),
       ),
     ],
   );
@@ -46,46 +55,62 @@ class BalanceCard extends StatelessWidget {
   final String caption;
   final Totals totals;
   @override
-  Widget build(BuildContext context) => Card(
-    color: currency == 'THB'
-        ? const Color(0xff075e55)
-        : const Color(0xff243e5e),
-    child: Padding(
-      padding: const EdgeInsets.all(24),
-      child: DefaultTextStyle.merge(
-        style: const TextStyle(color: Colors.white),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '$currency · $caption',
-              style: const TextStyle(color: Colors.white70, letterSpacing: 1),
+  Widget build(BuildContext context) => Container(
+    margin: const EdgeInsets.symmetric(vertical: 5),
+    padding: const EdgeInsets.all(20),
+    decoration: BoxDecoration(
+      color: Palette.brand,
+      borderRadius: BorderRadius.circular(24),
+    ),
+    child: DefaultTextStyle.merge(
+      style: const TextStyle(color: Colors.white),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '$currency · $caption',
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 12,
+              letterSpacing: .8,
             ),
-            const SizedBox(height: 12),
-            FittedBox(
-              child: Text(
-                money(totals.net, currency),
-                style: const TextStyle(
-                  fontSize: 32,
-                  fontWeight: FontWeight.bold,
-                ),
+          ),
+          const SizedBox(height: 10),
+          FittedBox(
+            child: Text(
+              money(totals.net, currency),
+              style: const TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -.5,
               ),
             ),
-            const SizedBox(height: 24),
-            Wrap(
-              spacing: 28,
-              runSpacing: 12,
-              children: [
-                Text(
-                  '${tr(context, 'Income')}\n${money(totals.income, currency)}',
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              for (final item in [
+                ('Income', totals.income, Icons.south_west_rounded),
+                ('Expenses', totals.expense, Icons.north_east_rounded),
+              ])
+                Expanded(
+                  child: Row(
+                    children: [
+                      Icon(item.$3, size: 14, color: Colors.white70),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          '${tr(context, item.$1)}  ${money(item.$2, currency)}',
+                          style: const TextStyle(fontSize: 12),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                Text(
-                  '${tr(context, 'Expenses')}\n${money(totals.expense, currency)}',
-                ),
-              ],
-            ),
-          ],
-        ),
+            ],
+          ),
+        ],
       ),
     ),
   );
@@ -95,34 +120,137 @@ class SlipTile extends StatelessWidget {
   const SlipTile(this.slip, {super.key});
   final Slip slip;
   @override
-  Widget build(BuildContext context) => Card(
-    child: ListTile(
-      leading: CircleAvatar(
-        child: Icon(
-          slip.review == ReviewStatus.pending
-              ? Icons.rule
-              : slip.direction == Direction.income
-              ? Icons.south_west
-              : Icons.north_east,
+  Widget build(BuildContext context) {
+    final income = slip.direction == Direction.income;
+    final pending = slip.review == ReviewStatus.pending;
+    final title = slip.receiver.isNotEmpty ? slip.receiver : slip.bank.label;
+    final source = slip.isManualExpense
+        ? tr(context, 'Manual expense')
+        : slip.isManualIncome
+        ? tr(context, 'Manual income')
+        : slip.bank.label;
+    final date = slip.date == null
+        ? 'Date needs review'
+        : DateFormat('d MMM').format(slip.date!);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => context.push(
+          slip.isManualExpense
+              ? '/expense/${slip.id}'
+              : slip.isManualIncome
+              ? '/income/${slip.id}'
+              : '/review/${slip.id}',
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: pending
+                      ? Palette.warn.withValues(alpha: .14)
+                      : income
+                      ? Palette.incomeSoft(context)
+                      : Palette.expenseSoft(context),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(
+                  pending
+                      ? Icons.priority_high_rounded
+                      : income
+                      ? Icons.south_west_rounded
+                      : Icons.north_east_rounded,
+                  size: 20,
+                  color: pending
+                      ? Palette.warn
+                      : income
+                      ? Palette.income
+                      : Palette.expense,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      pending
+                          ? '${tr(context, 'Needs review')} · $date'
+                          : '${slip.category} · $source',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: pending ? Palette.warn : Palette.muted(context),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: MediaQuery.sizeOf(context).width * .36,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      slip.amountMinor == null
+                          ? 'Check amount'
+                          : '${income ? '+' : '−'}${money(slip.amountMinor!, slip.currency)}',
+                      textAlign: TextAlign.end,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                        color: income ? Palette.income : Palette.text(context),
+                      ),
+                    ),
+                    if (!pending) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        date,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Palette.muted(context),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
-      title: Text(
-        slip.receiver.isNotEmpty ? slip.receiver : slip.bank.label,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-      subtitle: Text(
-        '${slip.isManualIncome ? tr(context, 'Manual income') : slip.bank.label} · ${slip.date == null ? 'Date needs review' : DateFormat('dd MMM').format(slip.date!)}\n${slip.review == ReviewStatus.pending ? 'Needs review' : slip.category}',
-      ),
-      isThreeLine: true,
-      trailing: Text(
-        slip.amountMinor == null
-            ? 'Check amount'
-            : money(slip.amountMinor!, slip.currency),
-        style: const TextStyle(fontWeight: FontWeight.bold),
-      ),
-      onTap: () => context.push(slip.isManualIncome ? '/income/${slip.id}' : '/review/${slip.id}'),
-    ),
+    );
+  }
+}
+
+/// Groups transaction rows into one rounded surface, like a bank statement.
+class SlipGroup extends StatelessWidget {
+  const SlipGroup(this.slips, {super.key});
+  final Iterable<Slip> slips;
+  @override
+  Widget build(BuildContext context) => Surface(
+    padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+    child: Column(children: [for (final s in slips) SlipTile(s)]),
   );
 }
 
@@ -134,11 +262,26 @@ class EmptyState extends StatelessWidget {
     padding: const EdgeInsets.symmetric(vertical: 28),
     child: Column(
       children: [
-        const Icon(Icons.receipt_long_outlined, size: 48),
-        const SizedBox(height: 12),
-        Text(title, style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
-        Text(subtitle, textAlign: TextAlign.center),
+        Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: Palette.soft(context),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(
+            Icons.receipt_long_outlined,
+            size: 30,
+            color: Palette.muted(context),
+          ),
+        ),
+        const SizedBox(height: 14),
+        LText(title, style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 6),
+        LText(
+          subtitle,
+          textAlign: TextAlign.center,
+          style: TextStyle(color: Palette.muted(context), fontSize: 13),
+        ),
       ],
     ),
   );

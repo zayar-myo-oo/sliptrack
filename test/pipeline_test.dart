@@ -41,12 +41,18 @@ class FakeGallery implements GalleryService {
 class FakeOcr implements OCRService {
   int calls = 0;
   bool fail = false;
+  double? confidence;
   String text = kbzReceipt;
   @override
   Future<OcrResult> recognizeText(String source) async {
     calls++;
     if (fail) throw StateError('Synthetic failure');
-    return OcrResult(text: text, hash: 'synthetic-hash-$source', blocks: []);
+    return OcrResult(
+      text: text,
+      hash: 'synthetic-hash-$source',
+      confidence: confidence,
+      blocks: [],
+    );
   }
 }
 
@@ -260,7 +266,12 @@ void main() {
       () async {
         final gallery = FakeGallery()..state = 'denied';
         final ocr = FakeOcr();
-        final scanner = ScanController(repo, gallery, ocr);
+        final scanner = ScanController(
+          repo,
+          gallery,
+          ocr,
+          requireIncome: false,
+        );
         addTearDown(scanner.dispose);
         await repo.setSettings({'automatic': true});
         await scanner.catchUp();
@@ -273,7 +284,7 @@ void main() {
     test('limited access reads only returned assets', () async {
       final gallery = FakeGallery()..state = 'limited';
       final ocr = FakeOcr();
-      final scanner = ScanController(repo, gallery, ocr);
+      final scanner = ScanController(repo, gallery, ocr, requireIncome: false);
       addTearDown(scanner.dispose);
       await repo.setSettings({'automatic': true});
       await scanner.catchUp();
@@ -282,7 +293,12 @@ void main() {
     });
     test('OCR failures persist and retry successfully', () async {
       final ocr = FakeOcr()..fail = true;
-      final scanner = ScanController(repo, FakeGallery(), ocr);
+      final scanner = ScanController(
+        repo,
+        FakeGallery(),
+        ocr,
+        requireIncome: false,
+      );
       addTearDown(scanner.dispose);
       await scanner.pick();
       expect(scanner.failed, 1);
@@ -295,10 +311,10 @@ void main() {
     test('restart resumes durable queue and rescanning avoids OCR', () async {
       final gallery = FakeGallery();
       final ocr = FakeOcr();
-      final first = ScanController(repo, gallery, ocr);
+      final first = ScanController(repo, gallery, ocr, requireIncome: false);
       await first.enqueue(['asset-a'], manual: true);
       first.dispose();
-      final second = ScanController(repo, gallery, ocr);
+      final second = ScanController(repo, gallery, ocr, requireIncome: false);
       addTearDown(second.dispose);
       await second.process();
       await second.enqueue(['asset-a']);
@@ -309,7 +325,7 @@ void main() {
     test('background restriction and pause defer processing', () async {
       final gallery = FakeGallery();
       final ocr = FakeOcr();
-      final scanner = ScanController(repo, gallery, ocr);
+      final scanner = ScanController(repo, gallery, ocr, requireIncome: false);
       addTearDown(scanner.dispose);
       await scanner.enqueue(['asset-a']);
       scanner.foreground = false;
@@ -325,7 +341,12 @@ void main() {
     });
     test('unrelated photos are not imported automatically', () async {
       final ocr = FakeOcr()..text = 'A family picnic';
-      final scanner = ScanController(repo, FakeGallery(), ocr);
+      final scanner = ScanController(
+        repo,
+        FakeGallery(),
+        ocr,
+        requireIncome: false,
+      );
       addTearDown(scanner.dispose);
       await scanner.enqueue(['asset-a']);
       await scanner.process();
@@ -348,7 +369,14 @@ void main() {
       final encrypted = await repo.vault.seal(prior.toJson(), 'accounts:prior');
       final executor = NativeDatabase.memory(
         setup: (database) {
-          for (final table in SlipDatabase.entities) {
+          for (final table in [
+            'accounts',
+            'transactions',
+            'categories',
+            'settings',
+            'scan_history',
+            'queue',
+          ]) {
             database.execute(
               'CREATE TABLE $table (id TEXT PRIMARY KEY,payload TEXT NOT NULL)',
             );
@@ -368,7 +396,8 @@ void main() {
       final version = await migrated.db
           .customSelect('PRAGMA user_version')
           .get();
-      expect(version.single.data.values.single, 3);
+      expect(version.single.data.values.single, 4);
+      expect(await migrated.savings(), isEmpty);
       await migrated.importSlip(synthetic());
       expect((await migrated.slips()).length, 1);
     });
@@ -389,6 +418,7 @@ void main() {
         repo,
         FakeGallery(),
         FakeOcr()..fail = true,
+        requireIncome: false,
       );
       addTearDown(scanner.dispose);
       await scanner.pick();
@@ -438,7 +468,12 @@ void main() {
       'permission upgrade discovers newly accessible historical assets',
       () async {
         final gallery = FakeGallery();
-        final scanner = ScanController(repo, gallery, FakeOcr());
+        final scanner = ScanController(
+          repo,
+          gallery,
+          FakeOcr(),
+          requireIncome: false,
+        );
         addTearDown(scanner.dispose);
         await repo.setSettings({
           'automatic': true,

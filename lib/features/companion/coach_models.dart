@@ -52,16 +52,19 @@ class SavingsEntry {
     String note = '',
   }) {
     if (amountMinor <= 0 ||
+        rateMicros <= 0 ||
         goalThbMinor <= 0 ||
-        !['THB', 'MMK'].contains(currency))
+        !['THB', 'MMK'].contains(currency)) {
       throw ArgumentError('Invalid savings');
+    }
     final thb = currency == 'MMK'
         ? mmkToThbMinor(amountMinor, rateMicros)
         : amountMinor;
     final xp =
         BigInt.from(thb) * BigInt.from(petXpScale) ~/ BigInt.from(goalThbMinor);
-    if (xp > BigInt.parse('9223372036854775807'))
+    if (xp > BigInt.parse('9223372036854775807')) {
       throw RangeError('Savings XP exceeds range');
+    }
     return SavingsEntry(
       id: newId(),
       amountMinor: amountMinor,
@@ -82,7 +85,11 @@ class BudgetLife {
   int get remaining => income - expenses;
   int get lifePercent => income <= 0
       ? 0
-      : ((remaining.clamp(0, income) * 100) ~/ income).clamp(0, 100);
+      : (BigInt.from(remaining.clamp(0, income)) *
+                BigInt.from(100) ~/
+                BigInt.from(income))
+            .toInt()
+            .clamp(0, 100);
   int get alertTier => income <= 0
       ? 0
       : expenses >= income
@@ -96,9 +103,16 @@ class BudgetLife {
       : alertTier > 0
       ? PetMood.worried
       : PetMood.happy;
-  factory BudgetLife.fromTotals(Map<String, Totals> totals, int rate) {
+  factory BudgetLife.fromTotals(
+    Map<String, Totals> totals,
+    int rate, {
+    int reserve = 0,
+  }) {
     final estimate = estimateInThb(totals, rate);
-    return BudgetLife(income: estimate.income, expenses: estimate.expense);
+    return BudgetLife(
+      income: estimate.income - reserve,
+      expenses: estimate.expense,
+    );
   }
 }
 
@@ -111,6 +125,8 @@ class PetProgress {
       : highestMilestones;
   int get level => (1 + earnedMilestones).clamp(1, 10);
   int get outfitsUnlocked => (earnedMilestones - 9).clamp(0, 1000000000);
-  double get nextRewardProgress => (xpMicros % petXpScale) / petXpScale;
+  double get nextRewardProgress => reachedMilestones < highestMilestones
+      ? 0
+      : (xpMicros % petXpScale) / petXpScale;
   double get bodyScale => 0.60 + (level - 1) * 0.04;
 }

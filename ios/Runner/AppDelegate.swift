@@ -5,12 +5,23 @@ import PhotosUI
 import Vision
 import CryptoKit
 import UniformTypeIdentifiers
+import UserNotifications
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private var media: SlipMediaBridge?
   override func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-    return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+    let launched = super.application(application, didFinishLaunchingWithOptions: launchOptions)
+    UNUserNotificationCenter.current().delegate = self
+    return launched
+  }
+  override func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
+    withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+    if notification.request.identifier.hasPrefix("sliptrack.budget.") {
+      completionHandler([.banner, .list, .sound])
+    } else {
+      super.userNotificationCenter(center, willPresent: notification, withCompletionHandler: completionHandler)
+    }
   }
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
@@ -55,6 +66,33 @@ final class SlipMediaBridge: NSObject, FlutterStreamHandler, PHPhotoLibraryChang
   private func handle(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
     let args = call.arguments as? [String: Any] ?? [:]
     switch call.method {
+    case "notificationPermission":
+      let center = UNUserNotificationCenter.current()
+      center.getNotificationSettings { settings in
+        if args["request"] as? Bool == true && settings.authorizationStatus == .notDetermined {
+          center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+            DispatchQueue.main.async { result(granted) }
+          }
+        } else {
+          let allowed = [.authorized, .provisional, .ephemeral].contains(settings.authorizationStatus)
+            && settings.alertSetting != .disabled
+          DispatchQueue.main.async { result(allowed) }
+        }
+      }
+    case "notifyBudget":
+      guard let id = args["id"] as? NSNumber, let title = args["title"] as? String,
+        let body = args["body"] as? String else {
+        result(FlutterError(code: "notification", message: "Missing notification fields", details: nil)); return
+      }
+      let center = UNUserNotificationCenter.current()
+      center.getNotificationSettings { settings in
+        guard [.authorized, .provisional, .ephemeral].contains(settings.authorizationStatus),
+          settings.alertSetting != .disabled else { DispatchQueue.main.async { result(false) }; return }
+        let content = UNMutableNotificationContent()
+        content.title = title; content.body = body; content.sound = .default
+        let request = UNNotificationRequest(identifier: "sliptrack.budget.\(id.intValue)", content: content, trigger: nil)
+        center.add(request) { error in DispatchQueue.main.async { result(error == nil) } }
+      }
     case "backupExport", "backupImport":
       guard backupResult == nil, let presenter = presenter else { result(FlutterError(code: "busy", message: "File picker unavailable", details: nil)); return }
       let picker: UIDocumentPickerViewController
@@ -93,6 +131,14 @@ final class SlipMediaBridge: NSObject, FlutterStreamHandler, PHPhotoLibraryChang
       config.filter = .images; config.selectionLimit = 10; config.preferredAssetRepresentationMode = .current
       let picker = PHPickerViewController(configuration: config); picker.delegate = self
       pickerResult = result; presenter.present(picker, animated: true)
+    case "albums":
+      guard permission() == "full" || permission() == "limited" else { result([]); return }
+      var albums = [[String: String]]()
+      let collections = PHAssetCollection.fetchAssetCollections(with: .album, subtype: .any, options: nil)
+      collections.enumerateObjects { collection, _, _ in
+        albums.append(["id": collection.localIdentifier, "name": collection.localizedTitle ?? "Album"])
+      }
+      result(albums)
     case "assets":
       guard permission() == "full" || permission() == "limited" else { result(FlutterError(code: "permission", message: "Photo access denied", details: nil)); return }
       let after = (args["afterMs"] as? NSNumber)?.doubleValue ?? 0
@@ -103,7 +149,13 @@ final class SlipMediaBridge: NSObject, FlutterStreamHandler, PHPhotoLibraryChang
         options.predicate = NSPredicate(format: "mediaType == %d AND creationDate >= %@ AND (modificationDate >= %@ OR creationDate >= %@)", PHAssetMediaType.image.rawValue,
           Date(timeIntervalSince1970: since / 1000) as NSDate, Date(timeIntervalSince1970: after / 1000) as NSDate, Date(timeIntervalSince1970: after / 1000) as NSDate)
         options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: true)]
-        let assets = PHAsset.fetchAssets(with: options)
+        let assets: PHFetchResult<PHAsset>
+        if let album = args["albumId"] as? String, !album.isEmpty {
+          guard let collection = PHAssetCollection.fetchAssetCollections(withLocalIdentifiers: [album], options: nil).firstObject else {
+            DispatchQueue.main.async { result(FlutterError(code: "album", message: "Selected album is unavailable. Choose another album.", details: nil)) }; return
+          }
+          assets = PHAsset.fetchAssets(in: collection, options: options)
+        } else { assets = PHAsset.fetchAssets(with: options) }
         let ids = offset < assets.count ? (offset..<min(offset + 100, assets.count)).map { assets.object(at: $0).localIdentifier } : []
         DispatchQueue.main.async { result(ids) }
       }

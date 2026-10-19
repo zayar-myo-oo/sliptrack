@@ -158,6 +158,31 @@ class _ReviewState extends ConsumerState<ReviewScreen> {
           ),
         ],
       ),
+      bottomNavigationBar: s == null
+          ? null
+          : SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        key: const Key('confirmReceipt'),
+                        onPressed: saving ? null : () => save(true),
+                        icon: const Icon(Icons.check_rounded),
+                        label: const LText('Confirm transaction'),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: saving ? null : () => save(false),
+                      child: const LText('Save for later review'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
       body: s == null
           ? Center(
               child: error == null
@@ -169,32 +194,65 @@ class _ReviewState extends ConsumerState<ReviewScreen> {
               child: ListView(
                 padding: const EdgeInsets.all(20),
                 children: [
-                  if (s.source.isNotEmpty)
-                    FutureBuilder(
-                      future: preview,
-                      builder: (_, snapshot) => snapshot.data == null
-                          ? const Card(
-                              child: Padding(
-                                padding: EdgeInsets.all(20),
-                                child: LText(
-                                  'Source unavailable or permission removed. Extracted record is preserved.',
-                                ),
-                              ),
-                            )
-                          : SizedBox(
-                              height: 280,
-                              child: InteractiveViewer(
-                                child: Image.memory(
-                                  snapshot.data!,
-                                  fit: BoxFit.contain,
-                                ),
+                  Card(
+                    color: Theme.of(context).colorScheme.primaryContainer,
+                    child: Padding(
+                      padding: const EdgeInsets.all(18),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          LText(
+                            s.review == ReviewStatus.confirmed
+                                ? 'Confirmed receipt'
+                                : 'One last check',
+                            style: Theme.of(context).textTheme.titleLarge,
+                          ),
+                          const SizedBox(height: 6),
+                          const LText(
+                            'Check the amount, date and direction. Confirm to update your totals.',
+                          ),
+                          if (s.bank == Bank.unknown ||
+                              s.amountMinor == null ||
+                              s.date == null)
+                            const Padding(
+                              padding: EdgeInsets.only(top: 8),
+                              child: LText(
+                                'Some details could not be extracted. Fill the missing fields from your receipt.',
                               ),
                             ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (s.source.isNotEmpty)
+                    ExpansionTile(
+                      title: const LText('View original receipt'),
+                      initiallyExpanded: false,
+                      children: [
+                        FutureBuilder(
+                          future: preview,
+                          builder: (_, snapshot) => snapshot.data == null
+                              ? const Card(
+                                  child: Padding(
+                                    padding: EdgeInsets.all(20),
+                                    child: LText(
+                                      'Source unavailable or permission removed. Extracted record is preserved.',
+                                    ),
+                                  ),
+                                )
+                              : SizedBox(
+                                  height: 280,
+                                  child: InteractiveViewer(
+                                    child: Image.memory(
+                                      snapshot.data!,
+                                      fit: BoxFit.contain,
+                                    ),
+                                  ),
+                                ),
+                        ),
+                      ],
                     ),
                   const SizedBox(height: 12),
-                  const LText(
-                    'Check all fields against the original receipt. OCR and parser scores are not proof of payment.',
-                  ),
                   if (s.possibleDuplicate)
                     CheckboxListTile(
                       title: const LText(
@@ -205,6 +263,44 @@ class _ReviewState extends ConsumerState<ReviewScreen> {
                           setState(() => duplicateAcknowledged = v ?? false),
                     ),
                   const SizedBox(height: 12),
+                  ...fields.entries
+                      .where(
+                        (e) => [
+                          'Amount',
+                          'Date and time',
+                          'Receiver',
+                          'Description',
+                          'Category',
+                        ].contains(e.key),
+                      )
+                      .map(
+                        (e) => Padding(
+                          padding: const EdgeInsets.only(top: 12),
+                          child: TextFormField(
+                            controller: e.value,
+                            decoration: InputDecoration(
+                              labelText: tr(context, e.key),
+                              helperText: e.key == 'Date and time'
+                                  ? 'dd/MM/yyyy HH:mm:ss · ${s.zone ?? 'Timezone unknown'}'
+                                  : null,
+                            ),
+                            keyboardType: e.key == 'Amount'
+                                ? const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  )
+                                : TextInputType.text,
+                            validator: (value) =>
+                                e.key == 'Amount' &&
+                                    parseMinor(value ?? '') == null
+                                ? 'Enter a decimal amount'
+                                : e.key == 'Date and time' &&
+                                      parseSlipDate(value ?? '') == null
+                                ? 'Enter the actual transaction date and time'
+                                : null,
+                          ),
+                        ),
+                      ),
+                  const SizedBox(height: 16),
                   DropdownButtonFormField<Bank>(
                     isExpanded: true,
                     initialValue: s.bank,
@@ -246,7 +342,7 @@ class _ReviewState extends ConsumerState<ReviewScreen> {
                     items: Direction.values
                         .map(
                           (d) =>
-                              DropdownMenuItem(value: d, child: Text(d.name)),
+                              DropdownMenuItem(value: d, child: LText(d.label)),
                         )
                         .toList(),
                     onChanged: (v) => setState(() => s.direction = v!),
@@ -279,33 +375,32 @@ class _ReviewState extends ConsumerState<ReviewScreen> {
                       onChanged: (v) => s.accountId = v == '' ? null : v,
                     ),
                   ),
-                  ...fields.entries.map(
-                    (e) => Padding(
-                      padding: const EdgeInsets.only(top: 12),
-                      child: TextFormField(
-                        controller: e.value,
-                        decoration: InputDecoration(
-                          labelText: tr(context, e.key),
-                          helperText: e.key == 'Date and time'
-                              ? 'dd/MM/yyyy HH:mm:ss · ${s.zone ?? 'Timezone unknown'}'
-                              : null,
-                        ),
-                        keyboardType: e.key == 'Amount'
-                            ? const TextInputType.numberWithOptions(
-                                decimal: true,
-                              )
-                            : TextInputType.text,
-                        validator: (value) =>
-                            e.key == 'Amount' && parseMinor(value ?? '') == null
-                            ? 'Enter a decimal amount'
-                            : e.key == 'Date and time' &&
-                                  parseSlipDate(value ?? '') == null
-                            ? 'Enter the actual transaction date and time'
-                            : null,
-                      ),
-                    ),
-                  ),
                   const SizedBox(height: 16),
+                  ExpansionTile(
+                    title: const LText('Sender & reference details'),
+                    children: fields.entries
+                        .where(
+                          (e) => ![
+                            'Amount',
+                            'Date and time',
+                            'Receiver',
+                            'Description',
+                            'Category',
+                          ].contains(e.key),
+                        )
+                        .map(
+                          (e) => Padding(
+                            padding: const EdgeInsets.only(top: 12),
+                            child: TextFormField(
+                              controller: e.value,
+                              decoration: InputDecoration(
+                                labelText: tr(context, e.key),
+                              ),
+                            ),
+                          ),
+                        )
+                        .toList(),
+                  ),
                   ExpansionTile(
                     title: const LText('Recognized text (on device)'),
                     children: [
@@ -317,14 +412,6 @@ class _ReviewState extends ConsumerState<ReviewScreen> {
                     ],
                   ),
                   const SizedBox(height: 20),
-                  FilledButton(
-                    onPressed: saving ? null : () => save(true),
-                    child: const LText('Confirm transaction'),
-                  ),
-                  TextButton(
-                    onPressed: saving ? null : () => save(false),
-                    child: const LText('Save for later review'),
-                  ),
                 ],
               ),
             ),

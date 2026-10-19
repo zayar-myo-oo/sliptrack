@@ -27,8 +27,9 @@ int mmkToThbMinor(int mmkMinor, int rateMicros) {
   final numerator = BigInt.from(mmkMinor).abs() * BigInt.from(rateScale);
   final denominator = BigInt.from(rateMicros);
   final rounded = (numerator + denominator ~/ BigInt.two) ~/ denominator;
-  if (rounded > BigInt.parse('9223372036854775807'))
+  if (rounded > BigInt.parse('9223372036854775807')) {
     throw RangeError('Converted amount exceeds supported range');
+  }
   return (mmkMinor < 0 ? -rounded : rounded).toInt();
 }
 

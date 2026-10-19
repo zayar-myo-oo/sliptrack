@@ -66,7 +66,8 @@ class _CompanionState extends ConsumerState<CompanionScreen> {
   }
 
   String? positive(String? value) =>
-      (parseMinor(value ?? '') ?? 0) <= 0 || (value ?? '').startsWith('-')
+      (parseMinor(value ?? '') ?? 0) <= 0 ||
+          normalizeDigits(value ?? '').trim().startsWith('-')
       ? tr(context, 'Enter a positive amount')
       : null;
   @override
@@ -141,9 +142,9 @@ class _CompanionState extends ConsumerState<CompanionScreen> {
               ),
               const SizedBox(height: 20),
               SwitchListTile(
-                title: const LText('Monthly spending alerts'),
+                title: const LText('Pay cycle spending alerts'),
                 subtitle: const LText(
-                  'Notify at 80% and 100% of monthly income',
+                  'Notify at 80% and 100% of pay cycle income',
                 ),
                 value: prefs.values['budgetAlertsEnabled'] == true,
                 onChanged: (enabled) async {
@@ -161,11 +162,12 @@ class _CompanionState extends ConsumerState<CompanionScreen> {
                       );
                     }
                   } catch (_) {
-                    if (context.mounted)
+                    if (context.mounted) {
                       message(
                         context,
                         'Notifications are unavailable on this device.',
                       );
+                    }
                   }
                 },
               ),
@@ -200,8 +202,9 @@ class _CompanionState extends ConsumerState<CompanionScreen> {
                     final i = int.tryParse(v);
                     if (i != null &&
                         i >= 0 &&
-                        i <= coach.progress.outfitsUnlocked)
+                        i <= coach.progress.outfitsUnlocked) {
                       await prefs.update('petOutfit', i);
+                    }
                   },
                 ),
               const SizedBox(height: 20),

@@ -1,6 +1,9 @@
 package app.sliptrack.sliptrack
 
 import android.Manifest
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.ContentUris
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -16,6 +19,8 @@ import android.util.Size
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import androidx.work.*
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
@@ -38,6 +43,8 @@ class MediaBridge(private val activity: FlutterFragmentActivity, messenger: Bina
     private val preferences = activity.getSharedPreferences("sliptrack.media", 0)
     private var sink: EventChannel.EventSink? = null
     private var permissionResult: MethodChannel.Result? = null
+    private var notificationResult: MethodChannel.Result? = null
+    private val budgetChannel = "sliptrack.budget"
     private var pickerResult: MethodChannel.Result? = null
     private var backupResult: MethodChannel.Result? = null
     private var backupData: String? = null
@@ -48,6 +55,9 @@ class MediaBridge(private val activity: FlutterFragmentActivity, messenger: Bina
     }
     private val permissions = activity.registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         permissionResult?.success(permission()); permissionResult = null; updateObserver()
+    }
+    private val notificationPermission = activity.registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+        notificationResult?.success(notificationsAllowed()); notificationResult = null
     }
     private val picker = activity.registerForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(20)) { uris ->
         uris.forEach { uri ->
@@ -93,6 +103,40 @@ class MediaBridge(private val activity: FlutterFragmentActivity, messenger: Bina
     }
     private fun handle(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
+            "notificationPermission" -> {
+                createBudgetChannel()
+                if (call.argument<Boolean>("request") == true && Build.VERSION.SDK_INT >= 33 &&
+                    ContextCompat.checkSelfPermission(activity, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                    if (notificationResult != null) { result.error("busy", "Notification permission request pending", null); return }
+                    notificationResult = result
+                    notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                } else result.success(notificationsAllowed())
+            }
+            "notifyBudget" -> {
+                createBudgetChannel()
+                val id = call.argument<Number>("id")?.toInt()
+                val title = call.argument<String>("title")
+                val body = call.argument<String>("body")
+                if (id == null || title == null || body == null) {
+                    result.error("notification", "Missing notification fields", null); return
+                }
+                if (!notificationsAllowed()) { result.success(false); return }
+                val intent = Intent(activity, MainActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                }
+                val open = PendingIntent.getActivity(activity, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+                val notification = NotificationCompat.Builder(activity, budgetChannel)
+                    .setSmallIcon(R.drawable.ic_budget_notification)
+                    .setContentTitle(title).setContentText(body)
+                    .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+                    .setContentIntent(open).setAutoCancel(true).setOnlyAlertOnce(true)
+                    .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+                    .setPriority(NotificationCompat.PRIORITY_DEFAULT).build()
+                try {
+                    NotificationManagerCompat.from(activity).notify("sliptrack.budget", id, notification)
+                    result.success(true)
+                } catch (_: SecurityException) { result.success(false) }
+            }
             "backupExport", "backupImport" -> {
                 if (backupResult != null) { result.error("busy", "File picker open", null); return }
                 backupResult = result
@@ -132,16 +176,30 @@ class MediaBridge(private val activity: FlutterFragmentActivity, messenger: Bina
                 } else WorkManager.getInstance(activity).cancelUniqueWork("sliptrack.gallery")
                 result.success(null)
             }
+            "albums" -> background(result) {
+                if (permission() == "denied") throw SecurityException()
+                val albums = linkedMapOf<String, String>()
+                resolver.query(MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                    arrayOf(MediaStore.Images.Media.BUCKET_ID, MediaStore.Images.Media.BUCKET_DISPLAY_NAME),
+                    null, null, null)?.use { cursor ->
+                    while (cursor.moveToNext()) albums[cursor.getString(0)] = cursor.getString(1) ?: "Folder"
+                }
+                albums.map { mapOf("id" to it.key, "name" to it.value) }
+            }
             "assets" -> background(result) {
                 if (permission() == "denied") throw SecurityException()
                 val after = (call.argument<Number>("afterMs")?.toLong() ?: 0L) / 1000
                 val since = call.argument<Number>("sinceMs")?.toLong() ?: 0L
                 val offset = call.argument<Number>("offset")?.toInt() ?: 0
+                val album = call.argument<String>("albumId")
+                val albumFilter = if (album.isNullOrEmpty()) "" else " AND ${MediaStore.Images.Media.BUCKET_ID} = ?"
+                val selectionArgs = mutableListOf(after.toString(), since.toString())
+                if (!album.isNullOrEmpty()) selectionArgs.add(album)
                 val ids = mutableListOf<String>()
                 resolver.query(MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
                     arrayOf(MediaStore.Images.Media._ID),
-                    "${MediaStore.Images.Media.DATE_ADDED} >= ? AND COALESCE(NULLIF(${MediaStore.Images.Media.DATE_TAKEN},0),${MediaStore.Images.Media.DATE_ADDED}*1000) >= ?",
-                    arrayOf(after.toString(), since.toString()), "${MediaStore.Images.Media._ID} ASC")?.use { cursor ->
+                    "${MediaStore.Images.Media.DATE_ADDED} >= ? AND COALESCE(NULLIF(${MediaStore.Images.Media.DATE_TAKEN},0),${MediaStore.Images.Media.DATE_ADDED}*1000) >= ?$albumFilter",
+                    selectionArgs.toTypedArray(), "${MediaStore.Images.Media._ID} ASC")?.use { cursor ->
                     if (cursor.moveToPosition(offset)) do {
                         ids.add(ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, cursor.getLong(0)).toString())
                     } while (ids.size < 100 && cursor.moveToNext())
@@ -191,6 +249,23 @@ class MediaBridge(private val activity: FlutterFragmentActivity, messenger: Bina
         val uri = Uri.parse(call.argument<String>("id") ?: throw IllegalArgumentException())
         require(uri.scheme == "content")
         return uri // ContentResolver enforces the current OS grant on each read.
+    }
+    private fun createBudgetChannel() {
+        if (Build.VERSION.SDK_INT >= 26) {
+            activity.getSystemService(NotificationManager::class.java).createNotificationChannel(
+                NotificationChannel(budgetChannel, "Monthly spending alerts", NotificationManager.IMPORTANCE_DEFAULT)
+            )
+        }
+    }
+    private fun notificationsAllowed(): Boolean {
+        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(activity,
+                Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return false
+        if (!NotificationManagerCompat.from(activity).areNotificationsEnabled()) return false
+        if (Build.VERSION.SDK_INT >= 26) {
+            val channel = activity.getSystemService(NotificationManager::class.java).getNotificationChannel(budgetChannel)
+            if (channel?.importance == NotificationManager.IMPORTANCE_NONE) return false
+        }
+        return true
     }
     private fun background(result: MethodChannel.Result, block: () -> Any?) {
         executor.execute {
