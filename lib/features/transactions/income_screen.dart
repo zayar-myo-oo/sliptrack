@@ -7,6 +7,9 @@ import '../../core/models.dart';
 import '../slip_recognition/parsers.dart';
 import '../../shared/components.dart';
 import '../../shared/localized_text.dart';
+import '../../shared/design.dart';
+import '../../core/categories.dart';
+import 'package:flutter/services.dart';
 
 class IncomeScreen extends ConsumerStatefulWidget {
   const IncomeScreen({
@@ -147,124 +150,203 @@ class _IncomeState extends ConsumerState<IncomeScreen> {
           ),
       ],
     ),
+    bottomNavigationBar: loading
+        ? null
+        : SafeArea(
+            minimum: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+            child: FilledButton(
+              onPressed: saving
+                  ? null
+                  : () {
+                      HapticFeedback.mediumImpact();
+                      save();
+                    },
+              child: LText(widget.expense ? 'Save expense' : 'Save income'),
+            ),
+          ),
     body: loading
         ? const Center(child: CircularProgressIndicator())
         : Form(
             key: form,
             child: ListView(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
               children: [
-                LText(
-                  widget.expense
-                      ? 'Add spending without a receipt.'
-                      : 'Salary starts a new period on this date, until your next salary. Set aside your savings plan before spending.',
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  key: Key(widget.expense ? 'expenseAmount' : 'incomeAmount'),
-                  controller: amount,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
+                Container(
+                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 14),
+                  decoration: BoxDecoration(
+                    color: widget.expense
+                        ? Palette.expenseSoft(context)
+                        : Palette.incomeSoft(context),
+                    borderRadius: BorderRadius.circular(28),
                   ),
-                  decoration: InputDecoration(labelText: tr(context, 'Amount')),
-                  validator: (v) =>
-                      (parseMinor(v ?? '') ?? 0) <= 0 ||
-                          normalizeDigits(v ?? '').trim().startsWith('-')
-                      ? tr(context, 'Enter a positive amount')
-                      : null,
+                  child: Column(
+                    children: [
+                      LText(
+                        widget.expense
+                            ? 'How much did you spend?'
+                            : 'How much came in?',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Palette.muted(context),
+                        ),
+                      ),
+                      TextFormField(
+                        key: Key(
+                          widget.expense ? 'expenseAmount' : 'incomeAmount',
+                        ),
+                        controller: amount,
+                        autofocus: widget.id == null,
+                        textAlign: TextAlign.center,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        style: TextStyle(
+                          fontSize: 40,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: -1,
+                          color: widget.expense
+                              ? Palette.expense
+                              : Palette.income,
+                        ),
+                        decoration: InputDecoration(
+                          hintText: '0.00',
+                          filled: false,
+                          border: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          hintStyle: TextStyle(
+                            color: Palette.muted(context).withValues(alpha: .5),
+                          ),
+                        ),
+                        validator: (v) =>
+                            (parseMinor(v ?? '') ?? 0) <= 0 ||
+                                normalizeDigits(v ?? '').trim().startsWith('-')
+                            ? tr(context, 'Enter a positive amount')
+                            : null,
+                      ),
+                      SegmentedButton<String>(
+                        showSelectedIcon: false,
+                        segments: [
+                          for (final c in ['THB', 'MMK'])
+                            ButtonSegment(value: c, label: Text(c)),
+                        ],
+                        selected: {currency},
+                        onSelectionChanged: (v) =>
+                            setState(() => currency = v.first),
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 12),
+                const SectionHeader(LText('Category')),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final name
+                        in widget.expense
+                            ? expenseCategories.map((c) => c.name)
+                            : incomeCategories)
+                      ChoiceChip(
+                        avatar: widget.expense
+                            ? Icon(
+                                categoryStyle(name).icon,
+                                size: 18,
+                                color: categoryStyle(name).color,
+                              )
+                            : null,
+                        label: LText(name),
+                        selected: category == name,
+                        showCheckmark: false,
+                        onSelected: (_) {
+                          HapticFeedback.selectionClick();
+                          setState(() => category = name);
+                        },
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Surface(
+                  padding: EdgeInsets.zero,
+                  child: Column(
+                    children: [
+                      ListTile(
+                        leading: const Icon(Icons.event_rounded),
+                        title: const LText('Date'),
+                        trailing: Text(
+                          DateFormat.yMMMd().format(date),
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        onTap: () async {
+                          final chosen = await showDatePicker(
+                            context: context,
+                            initialDate: date,
+                            firstDate: DateTime(2000),
+                            lastDate: DateTime(2100),
+                          );
+                          if (chosen != null && mounted) {
+                            setState(() => date = chosen);
+                          }
+                        },
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+                        child: TextFormField(
+                          controller: note,
+                          decoration: InputDecoration(
+                            prefixIcon: const Icon(Icons.notes_rounded),
+                            hintText: tr(context, 'Description'),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
                 if (!widget.expense) ...[
-                  TextFormField(
-                    key: const Key('savingsReserve'),
-                    controller: reserve,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
+                  const SectionHeader(LText('Savings plan')),
+                  Surface(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        LText(
+                          'Salary starts a new period on this date, until your next salary. Set aside your savings plan before spending.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Palette.muted(context),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        TextFormField(
+                          key: const Key('savingsReserve'),
+                          controller: reserve,
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          decoration: InputDecoration(
+                            prefixIcon: const Icon(Icons.savings_outlined),
+                            labelText:
+                                '${tr(context, 'Savings to set aside')} ($currency)',
+                            helperText: tr(
+                              context,
+                              'Reserved from spending. Not recorded as actual savings.',
+                            ),
+                          ),
+                          validator: (v) {
+                            final n = parseMinor(v ?? '');
+                            return n == null ||
+                                    normalizeDigits(
+                                      v ?? '',
+                                    ).trim().startsWith('-') ||
+                                    n > (parseMinor(amount.text) ?? 0)
+                                ? tr(
+                                    context,
+                                    'Enter an amount from 0 to your income',
+                                  )
+                                : null;
+                          },
+                        ),
+                      ],
                     ),
-                    decoration: InputDecoration(
-                      labelText: 'Savings to set aside ($currency)',
-                      helperText:
-                          'Reserved from spending. Not recorded as actual savings.',
-                    ),
-                    validator: (v) {
-                      final n = parseMinor(v ?? '');
-                      return n == null ||
-                              normalizeDigits(v ?? '').trim().startsWith('-') ||
-                              n > (parseMinor(amount.text) ?? 0)
-                          ? 'Enter an amount from 0 to your income'
-                          : null;
-                    },
                   ),
-                  const SizedBox(height: 12),
                 ],
-                DropdownButtonFormField<String>(
-                  isExpanded: true,
-                  initialValue: currency,
-                  decoration: InputDecoration(
-                    labelText: tr(context, 'Currency'),
-                  ),
-                  items: ['THB', 'MMK']
-                      .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-                      .toList(),
-                  onChanged: (v) => setState(() => currency = v!),
-                ),
-                const SizedBox(height: 12),
-                ListTile(
-                  title: const LText('Date'),
-                  subtitle: Text(DateFormat.yMMMd().format(date)),
-                  trailing: const Icon(Icons.calendar_month),
-                  onTap: () async {
-                    final chosen = await showDatePicker(
-                      context: context,
-                      initialDate: date,
-                      firstDate: DateTime(2000),
-                      lastDate: DateTime(2100),
-                    );
-                    if (chosen != null && mounted) {
-                      setState(() => date = chosen);
-                    }
-                  },
-                ),
-                DropdownButtonFormField<String>(
-                  isExpanded: true,
-                  initialValue: category,
-                  decoration: InputDecoration(
-                    labelText: tr(context, 'Category'),
-                  ),
-                  items:
-                      (widget.expense
-                              ? [
-                                  'Food',
-                                  'Transport',
-                                  'Shopping',
-                                  'Bills',
-                                  'Health',
-                                  'Other expenses',
-                                ]
-                              : [
-                                  'Salary',
-                                  'Extra income',
-                                  'Gift',
-                                  'Other income',
-                                ])
-                          .map(
-                            (c) => DropdownMenuItem(value: c, child: LText(c)),
-                          )
-                          .toList(),
-                  onChanged: (v) => category = v!,
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: note,
-                  decoration: InputDecoration(
-                    labelText: tr(context, 'Description'),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                FilledButton(
-                  onPressed: saving ? null : save,
-                  child: LText(widget.expense ? 'Save expense' : 'Save income'),
-                ),
               ],
             ),
           ),

@@ -1,6 +1,8 @@
 import '../../shared/localized_text.dart';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import '../../shared/design.dart';
+import '../../core/categories.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -71,6 +73,7 @@ class _ReviewState extends ConsumerState<ReviewScreen> {
 
   Future<void> save(bool confirm) async {
     if (saving || (confirm && !form.currentState!.validate())) return;
+    if (confirm) HapticFeedback.mediumImpact();
     final s = slip!;
     s.amountMinor = parseMinor(fields['Amount']!.text);
     s.date = parseSlipDate(fields['Date and time']!.text);
@@ -194,32 +197,85 @@ class _ReviewState extends ConsumerState<ReviewScreen> {
               child: ListView(
                 padding: const EdgeInsets.all(20),
                 children: [
-                  Card(
-                    color: Theme.of(context).colorScheme.primaryContainer,
-                    child: Padding(
-                      padding: const EdgeInsets.all(18),
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [Palette.brand, Palette.brandDeep],
+                      ),
+                      borderRadius: BorderRadius.circular(28),
+                    ),
+                    child: DefaultTextStyle.merge(
+                      style: const TextStyle(color: Colors.white),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          LText(
-                            s.review == ReviewStatus.confirmed
-                                ? 'Confirmed receipt'
-                                : 'One last check',
-                            style: Theme.of(context).textTheme.titleLarge,
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: .15),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Text(
+                                  s.bank.label,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                              const Spacer(),
+                              LText(
+                                s.review == ReviewStatus.confirmed
+                                    ? 'Confirmed receipt'
+                                    : 'One last check',
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 6),
-                          const LText(
-                            'Check the amount, date and direction. Confirm to update your totals.',
-                          ),
-                          if (s.bank == Bank.unknown ||
-                              s.amountMinor == null ||
-                              s.date == null)
-                            const Padding(
-                              padding: EdgeInsets.only(top: 8),
-                              child: LText(
-                                'Some details could not be extracted. Fill the missing fields from your receipt.',
+                          const SizedBox(height: 14),
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              s.amountMinor == null
+                                  ? '— ${s.currency}'
+                                  : money(s.amountMinor!, s.currency),
+                              style: const TextStyle(
+                                fontSize: 34,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: -.8,
                               ),
                             ),
+                          ),
+                          if (s.receiver.isNotEmpty)
+                            Text(
+                              s.receiver,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(color: Colors.white70),
+                            ),
+                          const SizedBox(height: 10),
+                          LText(
+                            s.bank == Bank.unknown ||
+                                    s.amountMinor == null ||
+                                    s.date == null
+                                ? 'Some details could not be extracted. Fill the missing fields from your receipt.'
+                                : 'Check the amount, date and direction. Confirm to update your totals.',
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -270,7 +326,7 @@ class _ReviewState extends ConsumerState<ReviewScreen> {
                           'Date and time',
                           'Receiver',
                           'Description',
-                          'Category',
+                          if (s.direction != Direction.expense) 'Category',
                         ].contains(e.key),
                       )
                       .map(
@@ -300,6 +356,26 @@ class _ReviewState extends ConsumerState<ReviewScreen> {
                           ),
                         ),
                       ),
+                  if (s.direction == Direction.expense) ...[
+                    const SectionHeader(LText('Category')),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final c in expenseCategories)
+                          ChoiceChip(
+                            avatar: Icon(c.icon, size: 18, color: c.color),
+                            label: LText(c.name),
+                            showCheckmark: false,
+                            selected: fields['Category']!.text == c.name,
+                            onSelected: (_) {
+                              HapticFeedback.selectionClick();
+                              setState(() => fields['Category']!.text = c.name);
+                            },
+                          ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 16),
                   DropdownButtonFormField<Bank>(
                     isExpanded: true,

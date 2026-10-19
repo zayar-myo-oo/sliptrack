@@ -1,5 +1,9 @@
+import 'strings_extra.dart';
+
 String translate(String language, String value) =>
-    translations[language]?[value] ?? value;
+    translations[language]?[value] ??
+    extraTranslations[language]?[value] ??
+    value;
 
 // Bank names, currency codes, references and user-entered text are never translated.
 const translations = {

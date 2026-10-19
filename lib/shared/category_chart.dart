@@ -99,7 +99,7 @@ class CategoryChart extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 10),
-                    Expanded(child: Text(entries[i].key)),
+                    Expanded(child: LText(entries[i].key)),
                     Text(
                       '${(entries[i].value * 100 / total).round()}%',
                       style: TextStyle(

@@ -28,6 +28,18 @@ import UserNotifications
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "SlipTrackMedia") {
       media = SlipMediaBridge(messenger: registrar.messenger())
     }
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "SlipTrackWidget") {
+      FlutterMethodChannel(name: "app.sliptrack/widget", binaryMessenger: registrar.messenger())
+        .setMethodCallHandler { call, result in
+          guard call.method == "update", let snapshot = call.arguments as? [String: Any] else {
+            result(FlutterMethodNotImplemented)
+            return
+          }
+          UserDefaults(suiteName: "group.app.sliptrack.sliptrack")?.set(snapshot, forKey: "widget.snapshot")
+          reloadWidgets()
+          result(true)
+        }
+    }
   }
 }
 

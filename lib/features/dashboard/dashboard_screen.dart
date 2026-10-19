@@ -1,5 +1,6 @@
 import '../../shared/localized_text.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -9,6 +10,7 @@ import '../../core/income_cycle.dart';
 import '../../shared/components.dart';
 import '../../shared/estimated_cash_flow.dart';
 import '../../shared/design.dart';
+import '../../shared/budget_section.dart';
 
 class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
@@ -354,6 +356,15 @@ class _DashboardState extends ConsumerState<DashboardScreen> {
                             ],
                           ),
                         ),
+                        BudgetSection(
+                          slips: all,
+                          month: payCycle
+                              ? DateTime(
+                                  DateTime.now().year,
+                                  DateTime.now().month,
+                                )
+                              : month,
+                        ),
                         SectionHeader(
                           const LText('Recent activity'),
                           action: TextButton(
@@ -480,7 +491,10 @@ class _QuickAction extends StatelessWidget {
       borderRadius: BorderRadius.circular(20),
       child: InkWell(
         borderRadius: BorderRadius.circular(20),
-        onTap: onTap,
+        onTap: () {
+          HapticFeedback.lightImpact();
+          onTap();
+        },
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
           child: Column(

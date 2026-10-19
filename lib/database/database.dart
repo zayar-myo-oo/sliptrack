@@ -5,6 +5,7 @@ import 'package:drift/native.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import '../core/models.dart';
+import '../core/categories.dart';
 import '../core/data_groups.dart';
 import '../core/vault.dart';
 import '../core/backup.dart';
@@ -354,6 +355,7 @@ class Repository {
   }
 
   Future<void> saveSlip(Slip s) async {
+    await _categorize(s);
     if (s.savingsReserveMinor < 0 ||
         s.savingsReserveMinor > (s.amountMinor ?? 0)) {
       throw ArgumentError('Savings reserve must be between zero and income');
@@ -371,6 +373,44 @@ class Repository {
       await _writeSlip(s);
     });
     changes.add(null);
+  }
+
+  /// Fills in a category for uncategorised expenses, and remembers the
+  /// category the user gave a receiver so later slips are sorted the same way.
+  Future<void> _categorize(Slip s) async {
+    if (s.direction != Direction.expense) return;
+    final memory = Map<String, dynamic>.from(
+      (await settings())['categoryMemory'] ?? const {},
+    );
+    final key = merchantKey(s.receiver);
+    if (s.category == uncategorized) {
+      s.category = guessCategory(s, memory) ?? uncategorized;
+    } else if (key.isNotEmpty &&
+        !s.isManualExpense &&
+        memory[key] != s.category) {
+      memory[key] = s.category;
+      await patchSettings({'categoryMemory': memory});
+    }
+  }
+
+  /// Sorts existing uncategorised expenses; returns how many were updated.
+  Future<int> recategorize() async {
+    final memory = Map<String, dynamic>.from(
+      (await settings())['categoryMemory'] ?? const {},
+    );
+    var updated = 0;
+    for (final s in await slips()) {
+      if (s.direction != Direction.expense || s.category != uncategorized) {
+        continue;
+      }
+      final guess = guessCategory(s, memory);
+      if (guess == null) continue;
+      s.category = guess;
+      await _writeSlip(s);
+      updated++;
+    }
+    if (updated > 0) changes.add(null);
+    return updated;
   }
 
   Future<void> deleteSlip(String id) async {

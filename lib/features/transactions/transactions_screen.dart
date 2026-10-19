@@ -180,7 +180,7 @@ class _TransactionsState extends ConsumerState<TransactionsScreen> {
             ),
           ),
         ),
-        SlipGroup(entry.value),
+        SlipGroup(entry.value, swipeToDelete: true),
       ],
     ]);
   }

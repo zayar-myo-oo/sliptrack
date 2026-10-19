@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -15,6 +16,7 @@ import '../core/income_cycle.dart';
 import '../core/models.dart';
 import '../core/exchange_rate.dart';
 import '../shared/design.dart';
+import '../core/widget_sync.dart';
 
 class SlipTrackApp extends ConsumerStatefulWidget {
   const SlipTrackApp({super.key});
@@ -25,6 +27,7 @@ class SlipTrackApp extends ConsumerStatefulWidget {
 class _AppState extends ConsumerState<SlipTrackApp>
     with WidgetsBindingObserver {
   late final GoRouter router;
+  late final Preferences _prefs;
   bool locked = false, authenticating = false, scannerStarted = false;
   @override
   void initState() {
@@ -154,6 +157,7 @@ class _AppState extends ConsumerState<SlipTrackApp>
         ),
       ],
     );
+    _prefs = prefs..addListener(_syncWidget);
     if (!locked) scheduleMicrotask(_initializeScanner);
   }
 
@@ -161,6 +165,11 @@ class _AppState extends ConsumerState<SlipTrackApp>
     if (scannerStarted) return;
     scannerStarted = true;
     await ref.read(coachProvider).initialize();
+    try {
+      await ref.read(repositoryProvider).recategorize();
+    } catch (_) {
+      /* Categories are a convenience; records stay intact. */
+    }
     try {
       await ref.read(scannerProvider).initialize();
     } catch (_) {
@@ -196,6 +205,7 @@ class _AppState extends ConsumerState<SlipTrackApp>
       if (ref.read(preferencesProvider).values['lock'] == true) {
         setState(() => locked = true);
       }
+      _syncWidget();
       unawaited(ref.read(scannerProvider).lifecycle(false));
     } else if (state == AppLifecycleState.resumed && !locked) {
       unawaited(ref.read(coachProvider).evaluate());
@@ -206,13 +216,22 @@ class _AppState extends ConsumerState<SlipTrackApp>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _prefs.removeListener(_syncWidget);
     router.dispose();
     super.dispose();
+  }
+
+  void _syncWidget() {
+    final slips = ref.read(slipsProvider).asData?.value;
+    if (slips != null) {
+      unawaited(syncHomeWidget(slips, ref.read(preferencesProvider).values));
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final prefs = ref.watch(preferencesProvider);
+    ref.listen(slipsProvider, (_, _) => _syncWidget());
     return ListenableBuilder(
       listenable: prefs,
       builder: (_, _) => MaterialApp.router(
@@ -483,7 +502,10 @@ class _BottomBar extends StatelessWidget {
         child: GestureDetector(
           key: ValueKey('nav:${AppShell.paths[i]}'),
           behavior: HitTestBehavior.opaque,
-          onTap: () => context.go(AppShell.paths[i]),
+          onTap: () {
+            HapticFeedback.selectionClick();
+            context.go(AppShell.paths[i]);
+          },
           child: AnimatedScale(
             scale: selected ? 1.08 : 1,
             duration: const Duration(milliseconds: 220),
@@ -545,7 +567,10 @@ class _BottomBar extends StatelessWidget {
                   child: InkWell(
                     customBorder: const CircleBorder(),
                     splashFactory: NoSplash.splashFactory,
-                    onTap: () => context.go('/scan'),
+                    onTap: () {
+                      HapticFeedback.lightImpact();
+                      context.go('/scan');
+                    },
                     child: Tooltip(
                       message: labels[2],
                       child: SizedBox(

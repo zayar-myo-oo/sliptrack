@@ -4,6 +4,10 @@ import 'package:intl/intl.dart';
 import '../core/models.dart';
 import 'localized_text.dart';
 import 'design.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../app/state.dart';
+import '../features/ocr/ocr_service.dart';
 
 void message(BuildContext context, String text) =>
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
@@ -136,13 +140,16 @@ class SlipTile extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
-        onTap: () => context.push(
-          slip.isManualExpense
-              ? '/expense/${slip.id}'
-              : slip.isManualIncome
-              ? '/income/${slip.id}'
-              : '/review/${slip.id}',
-        ),
+        onTap: () {
+          HapticFeedback.selectionClick();
+          context.push(
+            slip.isManualExpense
+                ? '/expense/${slip.id}'
+                : slip.isManualIncome
+                ? '/income/${slip.id}'
+                : '/review/${slip.id}',
+          );
+        },
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           child: Row(
@@ -190,7 +197,7 @@ class SlipTile extends StatelessWidget {
                     Text(
                       pending
                           ? '${tr(context, 'Needs review')} · $date'
-                          : '${slip.category} · $source',
+                          : '${tr(context, slip.category)} · $source',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -244,13 +251,69 @@ class SlipTile extends StatelessWidget {
 }
 
 /// Groups transaction rows into one rounded surface, like a bank statement.
-class SlipGroup extends StatelessWidget {
-  const SlipGroup(this.slips, {super.key});
+class SlipGroup extends ConsumerWidget {
+  const SlipGroup(this.slips, {this.swipeToDelete = false, super.key});
   final Iterable<Slip> slips;
+  final bool swipeToDelete;
   @override
-  Widget build(BuildContext context) => Surface(
+  Widget build(BuildContext context, WidgetRef ref) => Surface(
     padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
-    child: Column(children: [for (final s in slips) SlipTile(s)]),
+    child: Column(
+      children: [
+        for (final s in slips)
+          swipeToDelete
+              ? Dismissible(
+                  key: ValueKey('swipe:${s.id}'),
+                  direction: DismissDirection.endToStart,
+                  background: Container(
+                    alignment: Alignment.centerRight,
+                    padding: const EdgeInsets.only(right: 20),
+                    decoration: BoxDecoration(
+                      color: Palette.expense,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: const Icon(
+                      Icons.delete_outline_rounded,
+                      color: Colors.white,
+                    ),
+                  ),
+                  confirmDismiss: (_) async {
+                    HapticFeedback.mediumImpact();
+                    return await showDialog<bool>(
+                          context: context,
+                          builder: (c) => AlertDialog(
+                            title: const LText('Delete this transaction?'),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(c, false),
+                                child: const LText('Cancel'),
+                              ),
+                              FilledButton(
+                                onPressed: () => Navigator.pop(c, true),
+                                child: const LText('Delete'),
+                              ),
+                            ],
+                          ),
+                        ) ==
+                        true;
+                  },
+                  onDismissed: (_) async {
+                    await ref.read(repositoryProvider).deleteSlip(s.id);
+                    if (s.source.isNotEmpty) {
+                      try {
+                        await OnDeviceOCR.channel.invokeMethod('cleanup', {
+                          'id': s.source,
+                        });
+                      } catch (_) {
+                        /* Source cleanup can be retried on data deletion. */
+                      }
+                    }
+                  },
+                  child: SlipTile(s),
+                )
+              : SlipTile(s),
+      ],
+    ),
   );
 }
 

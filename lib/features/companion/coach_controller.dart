@@ -1,3 +1,4 @@
+import '../../core/budgets.dart';
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -110,12 +111,48 @@ class CoachController extends ChangeNotifier {
             }
           }
         }
+        if (settings['budgetAlertsEnabled'] == true &&
+            budgetLimits(settings).isNotEmpty &&
+            await notifications.permission()) {
+          await _categoryAlerts(now ?? DateTime.now());
+        }
         if (!_disposed) notifyListeners();
       } while (_again && !_disposed);
     } catch (_) {
       /* Keep financial content out of logs. OS notification denial never blocks the journal. */
     } finally {
       _running = false;
+    }
+  }
+
+  /// Sends at most one 80% and one 100% alert per category each month.
+  Future<void> _categoryAlerts(DateTime now) async {
+    final language = settings['language'] ?? 'en';
+    final month = '${now.year}-${now.month}';
+    final sent = Map<String, dynamic>.from(
+      settings['sentCategoryAlerts'] ?? {},
+    );
+    final statuses = budgetStatus(
+      await repo.slips(),
+      budgetLimits(settings),
+      now,
+      (settings['mmkPerThbMicros'] as int?) ?? defaultMmkPerThbMicros,
+    );
+    for (final b in statuses) {
+      final key = '$month:${b.category}';
+      if (b.tier == 0 || ((sent[key] as int?) ?? 0) >= b.tier) continue;
+      final category = translate(language, b.category);
+      final body = b.tier == 2
+          ? '${translate(language, 'Over budget')}: $category'
+          : '${translate(language, '80% of budget used')}: $category';
+      final accepted = await notifications.show(
+        id: 900000 + (key.hashCode & 0xffff) * 3 + b.tier,
+        title: translate(language, 'Budget alert'),
+        body: body,
+      );
+      if (!accepted) break;
+      sent[key] = b.tier;
+      await repo.patchSettings({'sentCategoryAlerts': sent});
     }
   }
 
