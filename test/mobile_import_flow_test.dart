@@ -53,8 +53,8 @@ void main() {
       final gallery = FakeGallery(), ocr = FakeOcr()..confidence = .5;
       final now = DateTime.now();
       ocr.text = ocr.text.replaceFirst(
-        '17/10/2026',
-        DateFormat('dd/MM/yyyy').format(now),
+        '17/10/2026 10:27:01',
+        DateFormat('dd/MM/yyyy HH:mm:ss').format(now),
       );
       final scanner = ScanController(repo, gallery, ocr);
       addTearDown(scanner.dispose);

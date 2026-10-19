@@ -10,6 +10,10 @@ class Palette {
   static const expense = Color(0xffc8544b);
   static const warn = Color(0xffc98a1b);
 
+  /// Chart highlight colour that keeps contrast on dark surfaces.
+  static Color accent(BuildContext context) =>
+      dark(context) ? const Color(0xff7fcf9f) : brand;
+
   static bool dark(BuildContext context) =>
       Theme.of(context).brightness == Brightness.dark;
   static Color bg(BuildContext context) =>

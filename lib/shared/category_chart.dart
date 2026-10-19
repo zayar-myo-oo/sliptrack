@@ -13,6 +13,9 @@ const _palette = [
   Color(0xff9aa69f),
 ];
 
+Color _color(BuildContext context, int i) =>
+    i == 0 ? Palette.accent(context) : _palette[i % _palette.length];
+
 class CategoryChart extends StatelessWidget {
   const CategoryChart({
     required this.amounts,
@@ -47,10 +50,10 @@ class CategoryChart extends StatelessWidget {
                   height: 190,
                   width: 190,
                   child: CustomPaint(
-                    painter: _Ring(
-                      entries.map((e) => e.value).toList(),
-                      Palette.soft(context),
-                    ),
+                    painter: _Ring(entries.map((e) => e.value).toList(), [
+                      for (var i = 0; i < entries.length; i++)
+                        _color(context, i),
+                    ], Palette.soft(context)),
                     child: Center(
                       child: Padding(
                         padding: const EdgeInsets.all(32),
@@ -91,7 +94,7 @@ class CategoryChart extends StatelessWidget {
                       width: 9,
                       height: 9,
                       decoration: BoxDecoration(
-                        color: _palette[i % _palette.length],
+                        color: _color(context, i),
                         shape: BoxShape.circle,
                       ),
                     ),
@@ -120,8 +123,9 @@ class CategoryChart extends StatelessWidget {
 }
 
 class _Ring extends CustomPainter {
-  _Ring(this.values, this.track);
+  _Ring(this.values, this.colors, this.track);
   final List<int> values;
+  final List<Color> colors;
   final Color track;
   @override
   void paint(Canvas canvas, Size size) {
@@ -142,7 +146,7 @@ class _Ring extends CustomPainter {
         start + gap / 2,
         sweep - gap,
         false,
-        paint..color = _palette[i % _palette.length],
+        paint..color = colors[i],
       );
       start += sweep;
     }
