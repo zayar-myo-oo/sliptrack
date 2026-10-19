@@ -44,7 +44,7 @@ import UserNotifications
 }
 
 // Kept in the app source compilation unit so no generated Xcode references are required.
-final class SlipMediaBridge: NSObject, FlutterStreamHandler, PHPhotoLibraryChangeObserver, PHPickerViewControllerDelegate, UIDocumentPickerDelegate {
+final class SlipMediaBridge: NSObject, FlutterStreamHandler, PHPhotoLibraryChangeObserver, PHPickerViewControllerDelegate, UIDocumentPickerDelegate, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
   private var channel: FlutterMethodChannel!
   private var sink: FlutterEventSink?
   private var pickerResult: FlutterResult?
@@ -111,7 +111,8 @@ final class SlipMediaBridge: NSObject, FlutterStreamHandler, PHPhotoLibraryChang
       if call.method == "backupExport" {
         guard let text = args["data"] as? String else { result(FlutterError(code: "backup", message: "Missing encrypted backup", details: nil)); return }
         do {
-          let url = FileManager.default.temporaryDirectory.appendingPathComponent("sliptrack-backup-" + UUID().uuidString + ".json")
+          let name = (args["name"] as? String).map { ($0 as NSString).lastPathComponent } ?? ("sliptrack-backup-" + UUID().uuidString + ".json")
+          let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
           try Data(text.utf8).write(to: url, options: [.atomic, .completeFileProtection])
           exportURL = url; picker = UIDocumentPickerViewController(forExporting: [url], asCopy: true)
         } catch { result(FlutterError(code: "backup", message: "Cannot stage encrypted export", details: nil)); return }
@@ -143,6 +144,14 @@ final class SlipMediaBridge: NSObject, FlutterStreamHandler, PHPhotoLibraryChang
       config.filter = .images; config.selectionLimit = 10; config.preferredAssetRepresentationMode = .current
       let picker = PHPickerViewController(configuration: config); picker.delegate = self
       pickerResult = result; presenter.present(picker, animated: true)
+    case "camera":
+      guard pickerResult == nil, let presenter = presenter,
+        UIImagePickerController.isSourceTypeAvailable(.camera) else {
+        result(FlutterError(code: "camera", message: "Camera unavailable", details: nil)); return
+      }
+      let camera = UIImagePickerController()
+      camera.sourceType = .camera; camera.delegate = self
+      pickerResult = result; presenter.present(camera, animated: true)
     case "albums":
       guard permission() == "full" || permission() == "limited" else { result([]); return }
       var albums = [[String: String]]()
@@ -230,6 +239,19 @@ final class SlipMediaBridge: NSObject, FlutterStreamHandler, PHPhotoLibraryChang
   func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
     if let url = exportURL { try? FileManager.default.removeItem(at: url); exportURL = nil }
     let callback = backupResult; backupResult = nil; callback?(nil)
+  }
+  // Camera photos stay in memory only; they are never saved to the library.
+  func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
+    picker.dismiss(animated: true)
+    let callback = pickerResult; pickerResult = nil
+    guard let image = info[.originalImage] as? UIImage, let data = image.jpegData(compressionQuality: 0.9) else { callback?([]); return }
+    let id = "temporary:" + UUID().uuidString
+    transient[id] = data
+    callback?([id])
+  }
+  func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+    picker.dismiss(animated: true)
+    let callback = pickerResult; pickerResult = nil; callback?([])
   }
   func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
     picker.dismiss(animated: true)

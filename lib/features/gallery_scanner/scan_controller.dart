@@ -149,11 +149,14 @@ class ScanController extends ChangeNotifier {
     return id;
   }
 
-  Future<void> pick({Direction? direction}) async {
+  Future<void> pick({Direction? direction, bool camera = false}) async {
     lastPickedReviewIds = [];
     try {
       if (!await checkIncome()) return;
-      final selected = await gallery.pick();
+      final g = gallery;
+      final selected = camera && g is NativeGallery
+          ? await g.camera()
+          : await gallery.pick();
       if (selected.isEmpty) return;
       // A deliberate import must work even after automatic scanning was paused.
       paused = false;

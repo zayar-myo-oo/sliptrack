@@ -100,6 +100,10 @@ class NativeGallery implements GalleryService {
   @override
   Future<List<String>> pick() async =>
       List<String>.from(await channel.invokeMethod('pick') ?? []);
+
+  /// Takes one photo with the camera; returns an in-memory source id.
+  Future<List<String>> camera() async =>
+      List<String>.from(await channel.invokeMethod('camera') ?? []);
   @override
   Future<List<String>> assets({
     required int afterMs,

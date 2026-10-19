@@ -7,6 +7,7 @@ import '../../core/models.dart';
 import '../../shared/components.dart';
 import '../../shared/category_chart.dart';
 import '../../shared/design.dart';
+import '../../shared/motion.dart';
 
 class AnalyticsScreen extends ConsumerStatefulWidget {
   const AnalyticsScreen({super.key});
@@ -142,6 +143,7 @@ class _AnalyticsState extends ConsumerState<AnalyticsScreen> {
         const SectionHeader(LText('By bank')),
         Surface(child: Column(children: _bars(context, banks))),
       ],
+      _SentHome(usable: usable.toList(), currency: currency),
       if (recentMonths.length > 1) ...[
         const SectionHeader(LText('Month to month')),
         Surface(
@@ -220,14 +222,10 @@ class _AnalyticsState extends ConsumerState<AnalyticsScreen> {
                 ],
               ),
               const SizedBox(height: 8),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: LinearProgressIndicator(
-                  value: max == 0 ? 0 : data[key]! / max,
-                  minHeight: 8,
-                  color: Palette.accent(context),
-                  backgroundColor: Palette.soft(context),
-                ),
+              GrowBar(
+                value: max == 0 ? 0 : data[key]! / max,
+                color: Palette.accent(context),
+                background: Palette.soft(context),
               ),
             ],
           ),
@@ -329,8 +327,9 @@ class _Summary extends StatelessWidget {
                 Flexible(
                   child: FittedBox(
                     fit: BoxFit.scaleDown,
-                    child: Text(
-                      money(spent, currency),
+                    child: CountUpMoney(
+                      spent,
+                      currency,
                       style: const TextStyle(
                         fontSize: 32,
                         fontWeight: FontWeight.w700,
@@ -473,41 +472,50 @@ class _DailyChartState extends State<_DailyChart> {
           ],
         ),
         const SizedBox(height: 16),
-        SizedBox(
-          height: 120,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              for (var i = 0; i < days; i++)
-                Expanded(
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () =>
-                        setState(() => picked = picked == i ? null : i),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 1.2),
-                      child: Align(
-                        alignment: Alignment.bottomCenter,
-                        child: FractionallySizedBox(
-                          heightFactor: max == 0
-                              ? .03
-                              : (values[i] / max).clamp(.03, 1.0),
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: values[i] == 0
-                                  ? Palette.soft(context)
-                                  : i == shown
-                                  ? accent
-                                  : accent.withValues(alpha: .35),
-                              borderRadius: BorderRadius.circular(4),
+        TweenAnimationBuilder<double>(
+          key: ValueKey(widget.month),
+          tween: Tween(begin: 0, end: 1),
+          duration: Motion.reduced(context) ? Duration.zero : Motion.slow,
+          curve: Motion.curve,
+          builder: (_, grow, _) => SizedBox(
+            height: 120,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                for (var i = 0; i < days; i++)
+                  Expanded(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () =>
+                          setState(() => picked = picked == i ? null : i),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 1.2),
+                        child: Align(
+                          alignment: Alignment.bottomCenter,
+                          child: FractionallySizedBox(
+                            heightFactor:
+                                (max == 0
+                                        ? .03
+                                        : (values[i] / max).clamp(.03, 1.0)) *
+                                    grow +
+                                .001,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: values[i] == 0
+                                    ? Palette.soft(context)
+                                    : i == shown
+                                    ? accent
+                                    : accent.withValues(alpha: .35),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
                             ),
                           ),
                         ),
                       ),
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
         const SizedBox(height: 6),
@@ -565,65 +573,173 @@ class _MonthBars extends StatelessWidget {
   Widget build(BuildContext context) {
     final max = values.fold<int>(1, (a, b) => a > b ? a : b);
     final accent = Palette.accent(context);
-    return SizedBox(
-      height: 160,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          for (var i = 0; i < months.length; i++)
-            Expanded(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => onSelect(months[i]),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 6),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      FittedBox(
-                        child: Text(
-                          NumberFormat.compact().format(values[i] / 100),
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: months[i] == selected
-                                ? Palette.text(context)
-                                : Palette.muted(context),
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: Motion.reduced(context) ? Duration.zero : Motion.slow,
+      curve: Motion.curve,
+      builder: (_, grow, _) => SizedBox(
+        height: 160,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            for (var i = 0; i < months.length; i++)
+              Expanded(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => onSelect(months[i]),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        FittedBox(
+                          child: Text(
+                            NumberFormat.compact().format(values[i] / 100),
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: months[i] == selected
+                                  ? Palette.text(context)
+                                  : Palette.muted(context),
+                            ),
                           ),
                         ),
+                        const SizedBox(height: 4),
+                        Flexible(
+                          child: FractionallySizedBox(
+                            heightFactor:
+                                (values[i] / max).clamp(.04, 1.0) * grow + .001,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: months[i] == selected
+                                    ? accent
+                                    : accent.withValues(alpha: .3),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          DateFormat('MMM').format(months[i]),
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: months[i] == selected
+                                ? FontWeight.w700
+                                : FontWeight.w400,
+                            color: Palette.muted(context),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Yearly total of money sent to family, for people supporting home.
+class _SentHome extends StatelessWidget {
+  const _SentHome({required this.usable, required this.currency});
+  final List<Slip> usable;
+  final String currency;
+  @override
+  Widget build(BuildContext context) {
+    final year = DateTime.now().year;
+    final sent = usable
+        .where(
+          (s) =>
+              s.direction == Direction.expense &&
+              s.category == 'Family & transfers' &&
+              s.date!.year == year,
+        )
+        .toList();
+    if (sent.isEmpty) return const SizedBox.shrink();
+    final byMonth = List<int>.filled(12, 0);
+    for (final s in sent) {
+      byMonth[s.date!.month - 1] += s.amountMinor!;
+    }
+    final total = byMonth.fold<int>(0, (a, b) => a + b);
+    final max = byMonth.fold<int>(1, (a, b) => a > b ? a : b);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SectionHeader(Text('${tr(context, 'Sent home in')} $year')),
+        Surface(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Text('🏡', style: TextStyle(fontSize: 26)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: CountUpMoney(
+                      total,
+                      currency,
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w800,
                       ),
-                      const SizedBox(height: 4),
-                      Flexible(
-                        child: FractionallySizedBox(
-                          heightFactor: (values[i] / max).clamp(.04, 1.0),
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: months[i] == selected
-                                  ? accent
-                                  : accent.withValues(alpha: .3),
-                              borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  Text(
+                    '${sent.length} ${tr(context, 'transfers')}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Palette.muted(context),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              SizedBox(
+                height: 54,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    for (var m = 0; m < 12; m++)
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 2),
+                          child: FractionallySizedBox(
+                            heightFactor: (byMonth[m] / max).clamp(.05, 1.0),
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: byMonth[m] == 0
+                                    ? Palette.soft(context)
+                                    : const Color(0xff3e9e9a),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
                             ),
                           ),
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        DateFormat('MMM').format(months[i]),
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: months[i] == selected
-                              ? FontWeight.w700
-                              : FontWeight.w400,
-                          color: Palette.muted(context),
-                        ),
-                      ),
-                    ],
-                  ),
+                  ],
                 ),
               ),
-            ),
-        ],
-      ),
+              const SizedBox(height: 4),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  for (final m in ['Jan', 'Apr', 'Jul', 'Oct', 'Dec'])
+                    Text(
+                      m,
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Palette.muted(context),
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

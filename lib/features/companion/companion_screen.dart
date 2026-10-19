@@ -8,6 +8,7 @@ import '../../shared/localized_text.dart';
 import '../../shared/design.dart';
 import 'package:flutter/services.dart';
 import 'companion_card.dart';
+import '../dashboard/home_extras.dart';
 import '../slip_recognition/parsers.dart';
 import 'coach_models.dart';
 
@@ -166,6 +167,10 @@ class _CompanionState extends ConsumerState<CompanionScreen> {
                     ),
                   ],
                 ),
+              ),
+              const SectionHeader(LText('Badges')),
+              StreakBadges(
+                slips: ref.watch(slipsProvider).asData?.value ?? const [],
               ),
               const SectionHeader(LText('Add savings')),
               Surface(

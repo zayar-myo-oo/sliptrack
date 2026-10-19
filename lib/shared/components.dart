@@ -4,6 +4,8 @@ import 'package:intl/intl.dart';
 import '../core/models.dart';
 import 'localized_text.dart';
 import 'design.dart';
+import 'motion.dart';
+import 'privacy.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../app/state.dart';
@@ -38,7 +40,7 @@ class PageBody extends StatelessWidget {
               constraints: const BoxConstraints(maxWidth: 760),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: children,
+                children: staggered(children),
               ),
             ),
           ),
@@ -216,17 +218,24 @@ class SlipTile extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Text(
-                      slip.amountMinor == null
-                          ? 'Check amount'
-                          : '${income ? '+' : '−'}${money(slip.amountMinor!, slip.currency)}',
-                      textAlign: TextAlign.end,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 14,
-                        color: income ? Palette.income : Palette.text(context),
+                    ValueListenableBuilder<bool>(
+                      valueListenable: hideAmounts,
+                      builder: (_, _, _) => Text(
+                        slip.amountMinor == null
+                            ? 'Check amount'
+                            : hideAmounts.value
+                            ? '$maskedAmount ${slip.currency}'
+                            : '${income ? '+' : '−'}${money(slip.amountMinor!, slip.currency)}',
+                        textAlign: TextAlign.end,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                          color: income
+                              ? Palette.income
+                              : Palette.text(context),
+                        ),
                       ),
                     ),
                     if (!pending) ...[

@@ -28,6 +28,8 @@
 	<true/>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Unlock your private SlipTrack financial records.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Take a photo of a paper receipt. The photo is read on your device and is not saved to your library.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Find bank receipt images you authorize and extract transactions privately on this device.</string>
 	<key>PHPhotoLibraryPreventAutomaticLimitedAccessAlert</key>

@@ -5,14 +5,20 @@ import '../core/exchange_rate.dart';
 import '../core/models.dart';
 import 'localized_text.dart';
 import 'design.dart';
+import 'motion.dart';
+import 'privacy.dart';
+import 'package:flutter/services.dart';
+import '../core/plans.dart';
 
 class EstimatedCashFlowCard extends ConsumerWidget {
   const EstimatedCashFlowCard({
     required this.totals,
     required this.scope,
     this.reserveThb = 0,
+    this.allowance,
     super.key,
   });
+  final DailyAllowance? allowance;
   final Map<String, Totals> totals;
   final String scope;
   final int reserveThb;
@@ -62,13 +68,38 @@ class EstimatedCashFlowCard extends ConsumerWidget {
                         style: const TextStyle(color: Colors.white70),
                       ),
                     ),
+                    ValueListenableBuilder<bool>(
+                      valueListenable: hideAmounts,
+                      builder: (_, hidden, _) => IconButton(
+                        key: const Key('toggleHideAmounts'),
+                        visualDensity: VisualDensity.compact,
+                        tooltip: tr(
+                          context,
+                          hidden ? 'Show amounts' : 'Hide amounts',
+                        ),
+                        onPressed: () {
+                          HapticFeedback.selectionClick();
+                          hideAmounts.value = !hidden;
+                          prefs.update('hideAmounts', !hidden);
+                        },
+                        icon: Icon(
+                          hidden
+                              ? Icons.visibility_off_rounded
+                              : Icons.visibility_rounded,
+                          color: Colors.white70,
+                          size: 20,
+                        ),
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 12),
                 FittedBox(
                   fit: BoxFit.scaleDown,
-                  child: Text(
-                    '≈ ${money(estimate.net - reserveThb, 'THB')}',
+                  child: CountUpMoney(
+                    estimate.net - reserveThb,
+                    'THB',
+                    prefix: '≈ ',
                     key: const Key('estimatedNetThb'),
                     style: const TextStyle(
                       fontSize: 36,
@@ -77,6 +108,29 @@ class EstimatedCashFlowCard extends ConsumerWidget {
                     ),
                   ),
                 ),
+                if (allowance != null) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: .12),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: ValueListenableBuilder<bool>(
+                      valueListenable: hideAmounts,
+                      builder: (_, hidden, _) => Text(
+                        '${hidden ? maskedAmount : money(allowance!.perDay, 'THB')} / ${tr(context, 'day')} · ${allowance!.daysLeft} ${tr(context, 'days to payday')}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 18),
                 Row(
                   children: [
@@ -102,8 +156,9 @@ class EstimatedCashFlowCard extends ConsumerWidget {
                               ],
                             ),
                             const SizedBox(height: 4),
-                            Text(
-                              money(item.$2, 'THB'),
+                            CountUpMoney(
+                              item.$2,
+                              'THB',
                               style: const TextStyle(
                                 fontWeight: FontWeight.w600,
                               ),

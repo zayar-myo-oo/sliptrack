@@ -82,6 +82,32 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
     }
   }
 
+  Future<void> importReceipts(bool needsIncome, {bool camera = false}) async {
+    if (needsIncome) {
+      context.push('/income');
+      return;
+    }
+    final scanner = ref.read(scannerProvider);
+    await scanner.pick(direction: scanDirection, camera: camera);
+    final records = await ref.read(repositoryProvider).slips();
+    final picked = records
+        .where((s) => scanner.lastPickedReviewIds.contains(s.id))
+        .toList();
+    final waiting = picked
+        .where((s) => s.review == ReviewStatus.pending)
+        .toList();
+    if (!mounted) return;
+    if (waiting.length == 1) {
+      context.push('/review/${waiting.single.id}');
+    } else if (picked.isNotEmpty && waiting.isEmpty) {
+      context.go('/');
+      message(
+        context,
+        'Receipt saved. Income and expenses updated for the receipt date.',
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final scanner = ref.watch(scannerProvider);
@@ -207,34 +233,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                 ),
                 onPressed: scanner.busy
                     ? null
-                    : () async {
-                        if (needsIncome) {
-                          context.push('/income');
-                          return;
-                        }
-                        await scanner.pick(direction: scanDirection);
-                        final records = await ref
-                            .read(repositoryProvider)
-                            .slips();
-                        final picked = records
-                            .where(
-                              (s) => scanner.lastPickedReviewIds.contains(s.id),
-                            )
-                            .toList();
-                        final waiting = picked
-                            .where((s) => s.review == ReviewStatus.pending)
-                            .toList();
-                        if (!context.mounted) return;
-                        if (waiting.length == 1) {
-                          context.push('/review/${waiting.single.id}');
-                        } else if (picked.isNotEmpty && waiting.isEmpty) {
-                          context.go('/');
-                          message(
-                            context,
-                            'Receipt saved. Income and expenses updated for the receipt date.',
-                          );
-                        }
-                      },
+                    : () => importReceipts(needsIncome),
                 icon: Icon(
                   needsIncome
                       ? Icons.account_balance_wallet_outlined
@@ -247,6 +246,19 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
                 ),
               ),
               const SizedBox(height: 8),
+              OutlinedButton.icon(
+                key: const Key('cameraReceipt'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: const BorderSide(color: Colors.white38),
+                ),
+                onPressed: scanner.busy
+                    ? null
+                    : () => importReceipts(needsIncome, camera: true),
+                icon: const Icon(Icons.photo_camera_outlined),
+                label: const LText('Take a photo of a receipt'),
+              ),
+              const SizedBox(height: 4),
               TextButton.icon(
                 style: TextButton.styleFrom(foregroundColor: Colors.white),
                 onPressed: scanner.busy

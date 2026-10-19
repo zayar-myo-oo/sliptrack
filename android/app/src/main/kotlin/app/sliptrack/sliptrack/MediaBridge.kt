@@ -65,7 +65,7 @@ class MediaBridge(private val activity: FlutterFragmentActivity, messenger: Bina
         }
         pickerResult?.success(uris.map { it.toString() }); pickerResult = null
     }
-    private val saveBackup = activity.registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+    private val saveBackup = activity.registerForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
         val callback = backupResult; val data = backupData; backupResult = null; backupData = null
         if (callback != null) {
             if (uri == null || data == null) callback.success(null)
@@ -140,7 +140,7 @@ class MediaBridge(private val activity: FlutterFragmentActivity, messenger: Bina
             "backupExport", "backupImport" -> {
                 if (backupResult != null) { result.error("busy", "File picker open", null); return }
                 backupResult = result
-                if (call.method == "backupExport") { backupData = call.argument<String>("data"); saveBackup.launch("sliptrack-backup.json") }
+                if (call.method == "backupExport") { backupData = call.argument<String>("data"); saveBackup.launch(call.argument<String>("name") ?: "sliptrack-backup.json") }
                 else openBackup.launch(arrayOf("application/json", "application/octet-stream"))
             }
             "permission" -> {

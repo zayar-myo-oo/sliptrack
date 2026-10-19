@@ -10,6 +10,7 @@ import '../core/models.dart';
 import '../features/companion/coach_models.dart';
 import '../features/companion/companion_card.dart';
 import 'design.dart';
+import 'motion.dart';
 import 'localized_text.dart';
 
 /// Monthly category budgets on the Overview, with the cat reacting to the
@@ -163,14 +164,11 @@ class _BudgetRow extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 6),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(6),
-                  child: LinearProgressIndicator(
-                    value: status.ratio.clamp(0, 1).toDouble(),
-                    minHeight: 7,
-                    color: color,
-                    backgroundColor: Palette.soft(context),
-                  ),
+                GrowBar(
+                  value: status.ratio,
+                  height: 7,
+                  color: color,
+                  background: Palette.soft(context),
                 ),
               ],
             ),

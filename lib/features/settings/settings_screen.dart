@@ -8,6 +8,8 @@ import '../ocr/ocr_service.dart';
 import '../../shared/components.dart';
 import '../../shared/design.dart';
 import 'exchange_rate_setting.dart';
+import 'package:intl/intl.dart';
+import '../../core/csv_export.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -116,6 +118,25 @@ class SettingsScreen extends ConsumerWidget {
             title: 'Encrypted local backup',
             subtitle: 'Export or restore a password-protected file',
             onTap: () => _backup(context, ref),
+          ),
+          _Row(
+            icon: Icons.table_view_rounded,
+            title: 'Export to Excel (CSV)',
+            subtitle: 'All transactions as a spreadsheet file',
+            onTap: () async {
+              try {
+                final slips = await ref.read(repositoryProvider).slips();
+                await OnDeviceOCR.channel.invokeMethod('backupExport', {
+                  'data': transactionsCsv(slips),
+                  'name':
+                      'sliptrack-${DateFormat('yyyy-MM-dd').format(DateTime.now())}.csv',
+                });
+              } catch (_) {
+                if (context.mounted) {
+                  message(context, 'Export failed. Please try again.');
+                }
+              }
+            },
           ),
           _Row(
             icon: Icons.storage_outlined,

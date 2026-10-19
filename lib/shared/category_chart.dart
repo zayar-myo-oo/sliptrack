@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../core/models.dart';
 import 'localized_text.dart';
 import 'design.dart';
+import 'motion.dart';
 
 const _palette = [
   Color(0xff1e4b3a),
@@ -49,32 +50,44 @@ class CategoryChart extends StatelessWidget {
                 child: SizedBox(
                   height: 190,
                   width: 190,
-                  child: CustomPaint(
-                    painter: _Ring(entries.map((e) => e.value).toList(), [
-                      for (var i = 0; i < entries.length; i++)
-                        _color(context, i),
-                    ], Palette.soft(context)),
-                    child: Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(32),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const LText(
-                              'Expenses',
-                              style: TextStyle(fontSize: 12),
-                            ),
-                            const SizedBox(height: 6),
-                            FittedBox(
-                              child: Text(
-                                money(total, currency),
-                                style: const TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.w700,
+                  child: TweenAnimationBuilder<double>(
+                    tween: Tween(begin: 0, end: 1),
+                    duration: Motion.reduced(context)
+                        ? Duration.zero
+                        : Motion.slow,
+                    curve: Motion.curve,
+                    builder: (_, progress, _) => CustomPaint(
+                      painter: _Ring(
+                        entries.map((e) => e.value).toList(),
+                        [
+                          for (var i = 0; i < entries.length; i++)
+                            _color(context, i),
+                        ],
+                        Palette.soft(context),
+                        progress,
+                      ),
+                      child: Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(32),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const LText(
+                                'Expenses',
+                                style: TextStyle(fontSize: 12),
+                              ),
+                              const SizedBox(height: 6),
+                              FittedBox(
+                                child: Text(
+                                  money(total, currency),
+                                  style: const TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w700,
+                                  ),
                                 ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -123,7 +136,8 @@ class CategoryChart extends StatelessWidget {
 }
 
 class _Ring extends CustomPainter {
-  _Ring(this.values, this.colors, this.track);
+  _Ring(this.values, this.colors, this.track, [this.progress = 1]);
+  final double progress;
   final List<int> values;
   final List<Color> colors;
   final Color track;
@@ -139,7 +153,7 @@ class _Ring extends CustomPainter {
     if (total == 0) return;
     var start = -math.pi / 2;
     for (var i = 0; i < values.length; i++) {
-      final sweep = values[i] / total * math.pi * 2;
+      final sweep = values[i] / total * math.pi * 2 * progress;
       final gap = values.length == 1 ? 0.0 : math.min(.22, sweep * .4);
       canvas.drawArc(
         rect,

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'motion.dart';
 
 /// Design tokens shared by every screen. Keep colours here instead of
 /// hard-coding them in widgets so light and dark themes stay consistent.
@@ -50,14 +51,16 @@ class Surface extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.symmetric(vertical: 5),
-    child: Material(
-      color: color ?? Palette.surface(context),
-      borderRadius: BorderRadius.circular(20),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(padding: padding, child: child),
-      ),
+    child: onTap == null ? _body(context) : Pressable(child: _body(context)),
+  );
+
+  Widget _body(BuildContext context) => Material(
+    color: color ?? Palette.surface(context),
+    borderRadius: BorderRadius.circular(20),
+    clipBehavior: Clip.antiAlias,
+    child: InkWell(
+      onTap: onTap,
+      child: Padding(padding: padding, child: child),
     ),
   );
 }

@@ -16,7 +16,11 @@ import '../core/income_cycle.dart';
 import '../core/models.dart';
 import '../core/exchange_rate.dart';
 import '../shared/design.dart';
+import '../shared/motion.dart';
 import '../core/widget_sync.dart';
+import '../core/plans.dart';
+import '../shared/privacy.dart';
+import '../features/plans/plans_screen.dart';
 
 class SlipTrackApp extends ConsumerStatefulWidget {
   const SlipTrackApp({super.key});
@@ -47,15 +51,13 @@ class _AppState extends ConsumerState<SlipTrackApp>
           routes: [
             GoRoute(
               path: '/',
-              pageBuilder: (_, state) => NoTransitionPage<void>(
-                key: state.pageKey,
-                child: const DashboardScreen(),
-              ),
+              pageBuilder: (_, state) =>
+                  _tabPage(state, child: const DashboardScreen()),
             ),
             GoRoute(
               path: '/transactions',
-              pageBuilder: (_, state) => NoTransitionPage<void>(
-                key: state.pageKey,
+              pageBuilder: (_, state) => _tabPage(
+                state,
                 child: TransactionsScreen(
                   reviewOnly: state.uri.queryParameters['review'] == 'true',
                   initialMonth: DateTime.tryParse(
@@ -66,50 +68,48 @@ class _AppState extends ConsumerState<SlipTrackApp>
             ),
             GoRoute(
               path: '/scan',
-              pageBuilder: (_, state) => NoTransitionPage<void>(
-                key: state.pageKey,
-                child: const ScanScreen(),
-              ),
+              pageBuilder: (_, state) =>
+                  _tabPage(state, child: const ScanScreen()),
             ),
             GoRoute(
               path: '/analytics',
-              pageBuilder: (_, state) => NoTransitionPage<void>(
-                key: state.pageKey,
-                child: const AnalyticsScreen(),
-              ),
+              pageBuilder: (_, state) =>
+                  _tabPage(state, child: const AnalyticsScreen()),
             ),
             GoRoute(
               path: '/settings',
-              pageBuilder: (_, state) => NoTransitionPage<void>(
-                key: state.pageKey,
-                child: const SettingsScreen(),
-              ),
+              pageBuilder: (_, state) =>
+                  _tabPage(state, child: const SettingsScreen()),
             ),
             GoRoute(
               path: '/accounts',
-              pageBuilder: (_, state) => NoTransitionPage<void>(
-                key: state.pageKey,
-                child: const AccountsScreen(),
-              ),
+              pageBuilder: (_, state) =>
+                  _detailPage(state, child: const AccountsScreen()),
             ),
             GoRoute(
               path: '/companion',
-              pageBuilder: (_, state) => NoTransitionPage<void>(
-                key: state.pageKey,
-                child: const CompanionScreen(),
+              pageBuilder: (_, state) =>
+                  _detailPage(state, child: const CompanionScreen()),
+            ),
+            GoRoute(
+              path: '/plans',
+              pageBuilder: (_, state) => _detailPage(
+                state,
+                child: PlansScreen(
+                  tab:
+                      int.tryParse(state.uri.queryParameters['tab'] ?? '') ?? 0,
+                ),
               ),
             ),
             GoRoute(
               path: '/manage-data',
-              pageBuilder: (_, state) => NoTransitionPage<void>(
-                key: state.pageKey,
-                child: const ManageDataScreen(),
-              ),
+              pageBuilder: (_, state) =>
+                  _detailPage(state, child: const ManageDataScreen()),
             ),
             GoRoute(
               path: '/income',
-              pageBuilder: (_, state) => NoTransitionPage<void>(
-                key: state.pageKey,
+              pageBuilder: (_, state) => _detailPage(
+                state,
                 child: IncomeScreen(
                   initialMonth: DateTime.tryParse(
                     '${state.uri.queryParameters['month'] ?? ''}-01',
@@ -119,15 +119,15 @@ class _AppState extends ConsumerState<SlipTrackApp>
             ),
             GoRoute(
               path: '/income/:id',
-              pageBuilder: (_, state) => NoTransitionPage<void>(
-                key: state.pageKey,
+              pageBuilder: (_, state) => _detailPage(
+                state,
                 child: IncomeScreen(id: state.pathParameters['id']!),
               ),
             ),
             GoRoute(
               path: '/expense',
-              pageBuilder: (_, state) => NoTransitionPage<void>(
-                key: state.pageKey,
+              pageBuilder: (_, state) => _detailPage(
+                state,
                 child: IncomeScreen(
                   expense: true,
                   initialMonth: DateTime.tryParse(
@@ -138,8 +138,8 @@ class _AppState extends ConsumerState<SlipTrackApp>
             ),
             GoRoute(
               path: '/expense/:id',
-              pageBuilder: (_, state) => NoTransitionPage<void>(
-                key: state.pageKey,
+              pageBuilder: (_, state) => _detailPage(
+                state,
                 child: IncomeScreen(
                   expense: true,
                   id: state.pathParameters['id']!,
@@ -148,8 +148,8 @@ class _AppState extends ConsumerState<SlipTrackApp>
             ),
             GoRoute(
               path: '/review/:id',
-              pageBuilder: (_, state) => NoTransitionPage<void>(
-                key: state.pageKey,
+              pageBuilder: (_, state) => _detailPage(
+                state,
                 child: ReviewScreen(id: state.pathParameters['id']!),
               ),
             ),
@@ -158,6 +158,7 @@ class _AppState extends ConsumerState<SlipTrackApp>
       ],
     );
     _prefs = prefs..addListener(_syncWidget);
+    hideAmounts.value = prefs.values['hideAmounts'] == true;
     if (!locked) scheduleMicrotask(_initializeScanner);
   }
 
@@ -165,6 +166,11 @@ class _AppState extends ConsumerState<SlipTrackApp>
     if (scannerStarted) return;
     scannerStarted = true;
     await ref.read(coachProvider).initialize();
+    try {
+      await _postRecurringBills();
+    } catch (_) {
+      /* A failed bill post is retried on the next launch. */
+    }
     try {
       await ref.read(repositoryProvider).recategorize();
     } catch (_) {
@@ -175,6 +181,21 @@ class _AppState extends ConsumerState<SlipTrackApp>
     } catch (_) {
       /* Picker remains available. */
     }
+  }
+
+  /// Adds this month's due recurring bills as manual expenses, once each.
+  Future<void> _postRecurringBills() async {
+    final prefs = ref.read(preferencesProvider);
+    final bills = readList(prefs.values, 'recurring', RecurringBill.fromJson);
+    final now = DateTime.now();
+    final due = billsToPost(bills, now);
+    if (due.isEmpty) return;
+    final repo = ref.read(repositoryProvider);
+    for (final b in due) {
+      await repo.saveSlip(slipForBill(b, now));
+      b.lastPosted = monthKey(now);
+    }
+    await prefs.update('recurring', [for (final b in bills) b.toJson()]);
   }
 
   Future<void> unlock() async {
@@ -439,7 +460,8 @@ class AppShell extends ConsumerWidget {
         ? '/settings'
         : path.startsWith('/income') ||
               path.startsWith('/expense') ||
-              path == '/companion'
+              path == '/companion' ||
+              path == '/plans'
         ? '/'
         : path;
     final index = paths.indexOf(tab).clamp(0, 4);
@@ -638,3 +660,30 @@ class NavigationBuddy extends ConsumerWidget {
     );
   }
 }
+
+/// Tabs switch instantly, like the iOS tab bar; detail screens slide in.
+Page<void> _tabPage(GoRouterState state, {required Widget child}) =>
+    NoTransitionPage<void>(key: state.pageKey, child: child);
+
+Page<void> _detailPage(GoRouterState state, {required Widget child}) =>
+    CustomTransitionPage<void>(
+      key: state.pageKey,
+      child: child,
+      transitionDuration: const Duration(milliseconds: 220),
+      reverseTransitionDuration: Motion.fast,
+      transitionsBuilder: (context, animation, secondary, child) {
+        if (Motion.reduced(context)) return child;
+        final t = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutCubic,
+          reverseCurve: Curves.easeInCubic,
+        );
+        return SlideTransition(
+          position: Tween(
+            begin: const Offset(.18, 0),
+            end: Offset.zero,
+          ).animate(t),
+          child: FadeTransition(opacity: t, child: child),
+        );
+      },
+    );

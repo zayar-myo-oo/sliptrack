@@ -41,7 +41,7 @@ Future<void> syncHomeWidget(
     'period': cycle.hasIncome(slips)
         ? '${translate(language, 'Pay cycle')} · ${DateFormat('d MMM').format(cycle.start)}'
         : translate(language, 'Pay cycle'),
-    'hidden': settings['lock'] == true,
+    'hidden': settings['lock'] == true || settings['hideAmounts'] == true,
     'empty': !cycle.hasIncome(slips),
   };
   final key = snapshot.toString();

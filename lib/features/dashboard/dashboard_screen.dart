@@ -10,6 +10,12 @@ import '../../core/income_cycle.dart';
 import '../../shared/components.dart';
 import '../../shared/estimated_cash_flow.dart';
 import '../../shared/design.dart';
+import '../../shared/motion.dart';
+import '../../core/exchange_rate.dart';
+import '../../core/plans.dart';
+import '../companion/coach_models.dart';
+import '../companion/companion_card.dart';
+import 'home_extras.dart';
 import '../../shared/budget_section.dart';
 
 class DashboardScreen extends ConsumerStatefulWidget {
@@ -77,6 +83,41 @@ class _DashboardState extends ConsumerState<DashboardScreen> {
         final canNextCycle = cycle.start.isBefore(
           IncomeCycle.fromIncome(DateTime.now(), all).start,
         );
+        final coach = ref.watch(coachProvider);
+        final rate = prefs.values['mmkPerThbMicros'] ?? defaultMmkPerThbMicros;
+        final current = IncomeCycle.fromIncome(DateTime.now(), all);
+        final cycleSlips = all.where((s) => current.contains(s.date)).toList();
+        final reserveNow = current.reserveThb(cycleSlips, rate);
+        final life = BudgetLife.fromTotals(
+          totalsFor(cycleSlips),
+          rate,
+          reserve: reserveNow,
+        );
+        final allowance = current.hasIncome(all)
+            ? DailyAllowance.of(
+                current,
+                estimateInThb(totalsFor(cycleSlips), rate).net - reserveNow,
+                DateTime.now(),
+              )
+            : null;
+        int thbOf(Slip s) => s.currency == 'MMK'
+            ? mmkToThbMinor(s.amountMinor ?? 0, rate)
+            : s.amountMinor ?? 0;
+        final today = DateTime.now();
+        final spentToday = all
+            .where(
+              (s) =>
+                  s.direction == Direction.expense &&
+                  s.review == ReviewStatus.confirmed &&
+                  s.date != null &&
+                  s.date!.year == today.year &&
+                  s.date!.month == today.month &&
+                  s.date!.day == today.day,
+            )
+            .fold<int>(0, (n, s) => n + thbOf(s));
+        final streak = allowance == null
+            ? 0
+            : spendingStreak(all, allowance.perDay, today, thbOf);
         return CustomScrollView(
           slivers: [
             SliverPadding(
@@ -87,7 +128,7 @@ class _DashboardState extends ConsumerState<DashboardScreen> {
                     constraints: const BoxConstraints(maxWidth: 760),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
+                      children: staggered([
                         Row(
                           children: [
                             Expanded(
@@ -110,10 +151,26 @@ class _DashboardState extends ConsumerState<DashboardScreen> {
                                 ],
                               ),
                             ),
-                            _RoundButton(
-                              icon: Icons.savings_outlined,
-                              tooltip: tr(context, 'Recorded savings'),
-                              onTap: () => context.push('/companion'),
+                            Builder(
+                              builder: (catContext) => SizedBox(
+                                width: 60,
+                                height: 60,
+                                child: Buddy(
+                                  mood: life.mood,
+                                  progress: coach.progress,
+                                  outfit: coach.outfit,
+                                  onTap: () => showCatBubble(
+                                    catContext,
+                                    catTip(
+                                      context,
+                                      life: life,
+                                      allowance: allowance,
+                                      streak: streak,
+                                      spentToday: spentToday,
+                                    ),
+                                  ),
+                                ),
+                              ),
                             ),
                           ],
                         ),
@@ -245,6 +302,7 @@ class _DashboardState extends ConsumerState<DashboardScreen> {
                         ),
                         const SizedBox(height: 6),
                         EstimatedCashFlowCard(
+                          allowance: payCycle ? allowance : null,
                           totals: totals,
                           scope: scope,
                           reserveThb: payCycle
@@ -276,6 +334,9 @@ class _DashboardState extends ConsumerState<DashboardScreen> {
                             ])
                               Expanded(
                                 child: _QuickAction(
+                                  onLongPress: action.$2 == 'Add expense'
+                                      ? () => showQuickAdd(context, ref)
+                                      : null,
                                   icon: action.$1,
                                   label: action.$2,
                                   onTap: () => action.$3 == '/scan'
@@ -285,6 +346,8 @@ class _DashboardState extends ConsumerState<DashboardScreen> {
                               ),
                           ],
                         ),
+                        const PlansStrip(),
+                        RecapBanner(slips: all),
                         if (review > 0)
                           _Banner(
                             icon: Icons.fact_check_outlined,
@@ -429,7 +492,7 @@ class _DashboardState extends ConsumerState<DashboardScreen> {
                             ),
                           ),
                         ],
-                      ],
+                      ]),
                     ),
                   ),
                 ),
@@ -443,35 +506,21 @@ class _DashboardState extends ConsumerState<DashboardScreen> {
 }
 
 class _RoundButton extends StatelessWidget {
-  const _RoundButton({
-    required this.icon,
-    this.tooltip,
-    this.onTap,
-    this.highlighted = false,
-  });
+  const _RoundButton({required this.icon, this.highlighted = false});
   final IconData icon;
-  final String? tooltip;
-  final VoidCallback? onTap;
   final bool highlighted;
   @override
-  Widget build(BuildContext context) {
-    final box = Container(
-      width: 44,
-      height: 44,
-      decoration: BoxDecoration(
-        color: highlighted
-            ? Theme.of(context).colorScheme.primaryContainer
-            : Palette.surface(context),
-        shape: BoxShape.circle,
-      ),
-      child: Icon(icon, size: 21, color: Palette.text(context)),
-    );
-    if (onTap == null) return box;
-    return Tooltip(
-      message: tooltip ?? '',
-      child: InkResponse(onTap: onTap, radius: 26, child: box),
-    );
-  }
+  Widget build(BuildContext context) => Container(
+    width: 44,
+    height: 44,
+    decoration: BoxDecoration(
+      color: highlighted
+          ? Theme.of(context).colorScheme.primaryContainer
+          : Palette.surface(context),
+      shape: BoxShape.circle,
+    ),
+    child: Icon(icon, size: 21, color: Palette.text(context)),
+  );
 }
 
 class _QuickAction extends StatelessWidget {
@@ -479,46 +528,50 @@ class _QuickAction extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.onTap,
+    this.onLongPress,
   });
+  final VoidCallback? onLongPress;
   final IconData icon;
   final String label;
   final VoidCallback onTap;
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.symmetric(horizontal: 4),
-    child: Material(
-      color: Palette.surface(context),
-      borderRadius: BorderRadius.circular(20),
-      child: InkWell(
+    child: Pressable(
+      child: Material(
+        color: Palette.surface(context),
         borderRadius: BorderRadius.circular(20),
-        onTap: () {
-          HapticFeedback.lightImpact();
-          onTap();
-        },
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
-          child: Column(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: Palette.soft(context),
-                  shape: BoxShape.circle,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: () {
+            HapticFeedback.lightImpact();
+            onTap();
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
+            child: Column(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: Palette.soft(context),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(icon, size: 22, color: Palette.text(context)),
                 ),
-                child: Icon(icon, size: 22, color: Palette.text(context)),
-              ),
-              const SizedBox(height: 8),
-              LText(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
+                const SizedBox(height: 8),
+                LText(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
