@@ -1,0 +1,19 @@
+# Storage and security
+
+Financial payloads (including amount, date, currency, account identifiers, notes, OCR text, source identifiers, preferences, scan history and queue payloads) are AES-256-GCM encrypted with a fresh random nonce per write. Table/row identity is authenticated as associated data. SQLite stores encrypted JSON payloads rather than plaintext financial columns. It is not SQLCipher: schema, random record IDs, row counts and queue work states remain visible. Duplicate lookup values are HMAC-SHA256 digests under the device key, not plaintext references or unsalted account hashes.
+
+A random device key is stored by flutter_secure_storage using Android Keystore-backed storage or the iOS Keychain (first unlock, this device only). A missing key for an existing database is an error; the app does not silently reset it or replace the database. Normal OS/device backup is not a migration mechanism for these device-only keys. Use a password-encrypted SlipTrack export before switching devices. Android system backup is disabled.
+
+Backups use PBKDF2-HMAC-SHA256 (210,000 iterations, fresh 16-byte salt) and AES-256-GCM with authenticated version metadata. A password of at least 12 characters is required. Backups contain records, not source photos. Restore requires an empty database and runs transactionally; media queue items are not restored across devices. Restoring disables automatic scanning and clears the old discovery checkpoint; choose the new photo scope before resuming scanning. Backup/export uses Android CreateDocument/OpenDocument or an iOS UIDocumentPicker. Choose a local destination; the app passes only an encrypted backup to the chosen system file provider. Verify backup restore and keep the password separately; no server recovery exists.
+
+The iOS Share inbox has a separate symmetric key in a shared Keychain group. Only explicitly shared image data is staged, encrypted and excluded from backup. Its UI discloses temporary retention. Confirmation, receipt deletion or full-data deletion removes its staged copy. Neither platform deletes the original gallery image. PHPicker-only in-memory images disappear when the process ends.
+
+Optional app lock uses local_auth biometric/device authentication and locks on background/resume. Authentication failure does not bypass the lock. Android FLAG_SECURE protects app snapshots/screenshots; iOS app-switcher snapshot obfuscation still needs device-specific hardening. App lock is a UI access boundary; the vault key is not configured to require a fresh biometric prompt per database decryption.
+
+There are no bank credentials, OTP/PIN fields, bank APIs, notification listeners, SMS permissions, accessibility services, cloud OCR or application analytics SDKs. Raw OCR text is kept only inside encrypted records for review and is never deliberately logged. The release Android manifest removes INTERNET permission. All code catches native import errors with generic messages instead of logging receipt text or identifiers.
+
+Review is mandatory before any transaction affects totals. Direction classification requires an unmasked exact identifier, the endpoint institution, the currency and an unambiguous registered account. Names and suffixes never establish ownership. Missing endpoint metadata stays unknown. All financial arithmetic uses positive integer hundredths, with direction stored separately. Provider references with contradictory financial data are retained for review, and cannot both be confirmed under the same provider/reference.
+
+Before release, audit merged manifests and dependencies, code signing, native key invalidation/restore behavior, App Group access, screenshots, temporary-image retention, backup performance and physical-device locking. This document describes the implementation; it is not an independent security audit.
+
+

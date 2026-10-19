@@ -1,0 +1,4 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
+    <!-- Bundled OCR needs no connection. Remove transitive SDK network access in release. -->
+    <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
+</manifest>
